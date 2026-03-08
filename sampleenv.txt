@@ -1,0 +1,8 @@
+DJANGO_SECRET_KEY=7ozs7a%gz03ksmkrtd9seeic7m)jlnw+gq@-jwv1e2(j(7%cg2
+DJANGO_DEBUG=TRUE
+DJANGO_DB_ENGINE=django.db.backends.postgresql
+DJANGO_DB_NAME=spatialmetrics
+DJANGO_DB_USER=<username>
+DJANGO_DB_PASSWORD=<your-password>
+DJANGO_DB_HOST=localhost
+DJANGO_DB_PORT=5423

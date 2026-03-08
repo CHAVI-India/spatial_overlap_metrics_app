@@ -52,19 +52,33 @@ class DICOMInstance(models.Model):
     series = models.ForeignKey(DICOMSeries, on_delete=models.CASCADE)
     sop_instance_uid = models.CharField(max_length=255, unique=True)
     instance_number = models.IntegerField(blank=True, null=True)
-    instance_file_path = models.CharField(max_length=255, blank=True, null=True)
+    instance_file_path = models.CharField(max_length=512, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     modified_at = models.DateTimeField(auto_now=True)
     
     def __str__(self):
         return self.sop_instance_uid
 
+
+class StapleROI(models.Model):
+    '''
+    This model will store information about the STAPLE ROI. It is linked to the RTStructROI model.
+    '''
+    instance = models.ForeignKey(DICOMInstance, on_delete=models.CASCADE)
+    created_at = models.DateTimeField(auto_now_add=True)
+    modified_at = models.DateTimeField(auto_now=True)
+    
+    def __str__(self):
+        return self.instance.sop_instance_uid
+
+
 class RTStructROI(models.Model):
     '''
     This model will store information about the RT Struct ROI. It is linked to the DICOMInstance model.
     '''
     instance = models.ForeignKey(DICOMInstance, on_delete=models.CASCADE)
-    roi_number = models.IntegerField()
+    staple_roi = models.ForeignKey(StapleROI, on_delete=models.CASCADE,null=True,blank=True)
+    roi_number = models.IntegerField(null=True,blank = True)
     roi_name = models.CharField(max_length=255)
     created_at = models.DateTimeField(auto_now_add=True)
     modified_at = models.DateTimeField(auto_now=True)
