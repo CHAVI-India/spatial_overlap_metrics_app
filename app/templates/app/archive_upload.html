@@ -1,0 +1,34 @@
+{% extends 'app/base.html' %}
+
+{% block title %}Upload DICOM Archive{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card shadow">
+            <div class="card-header bg-success text-white">
+                <h4 class="mb-0"><i class="bi bi-upload me-2"></i>Upload DICOM Archive</h4>
+            </div>
+            <div class="card-body">
+                <p class="text-muted mb-4">
+                    Upload a ZIP file containing DICOM files. The system will extract and process the DICOM metadata.
+                </p>
+                <form method="post" enctype="multipart/form-data">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label for="file" class="form-label">Select ZIP File</label>
+                        <input type="file" class="form-control" id="file" name="file" accept=".zip" required>
+                        <div class="form-text">Only ZIP files containing DICOM (.dcm) files are supported.</div>
+                    </div>
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-success">
+                            <i class="bi bi-upload me-1"></i>Upload Archive
+                        </button>
+                        <a href="{% url 'dicom_archive_list' %}" class="btn btn-outline-secondary">Cancel</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

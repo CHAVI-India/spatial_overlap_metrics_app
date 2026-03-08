@@ -1,0 +1,101 @@
+{% extends 'app/base.html' %}
+
+{% block title %}Study Details{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+    <a href="{% url 'patient_detail' study.patient.pk %}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-left me-1"></i>Back to Patient
+    </a>
+</div>
+
+<div class="card shadow mb-4">
+    <div class="card-header bg-info text-white">
+        <h5 class="mb-0"><i class="bi bi-journal-medical me-2"></i>Study Information</h5>
+    </div>
+    <div class="card-body">
+        <table class="table table-borderless">
+            <tr>
+                <td class="text-muted">Patient:</td>
+                <td>
+                    <a href="{% url 'patient_detail' study.patient.pk %}">
+                        {{ study.patient.patient_name|default:study.patient.patient_id }}
+                    </a>
+                </td>
+            </tr>
+            <tr>
+                <td class="text-muted">Study Instance UID:</td>
+                <td><code>{{ study.study_instance_uid }}</code></td>
+            </tr>
+            <tr>
+                <td class="text-muted">Study Date:</td>
+                <td>{{ study.study_date|default:"-" }}</td>
+            </tr>
+            <tr>
+                <td class="text-muted">Series Count:</td>
+                <td><span class="badge bg-info">{{ series_list|length }}</span></td>
+            </tr>
+        </table>
+    </div>
+</div>
+
+<div class="card shadow">
+    <div class="card-header bg-secondary text-white">
+        <h5 class="mb-0"><i class="bi bi-layers me-2"></i>Series</h5>
+    </div>
+    <div class="card-body">
+        {% if series_list %}
+        <div class="row">
+            {% for series in series_list %}
+            <div class="col-md-6 mb-3">
+                <div class="card h-100">
+                    <div class="card-header bg-light">
+                        <h6 class="mb-0">
+                            <i class="bi bi-layer-forward me-2"></i>
+                            Series: {{ series.series_instance_uid|truncatechars:25 }}
+                        </h6>
+                    </div>
+                    <div class="card-body">
+                        <table class="table table-sm table-borderless mb-0">
+                            <tr>
+                                <td class="text-muted">Modality:</td>
+                                <td><span class="badge bg-primary">{{ series.modality|default:"Unknown" }}</span></td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted">Instances:</td>
+                                <td><span class="badge bg-secondary">{{ series.dicominstance_set.count }}</span></td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted">Series Date:</td>
+                                <td>{{ series.series_date|default:"-" }}</td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted">Frame of Ref UID:</td>
+                                <td>
+                                    {% if series.frame_of_reference_uid %}
+                                        <code>{{ series.frame_of_reference_uid|truncatechars:20 }}</code>
+                                    {% else %}
+                                        <span class="text-muted">-</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        </table>
+                    </div>
+                    <div class="card-footer bg-white">
+                        <button class="btn btn-sm btn-outline-primary" disabled>
+                            <i class="bi bi-eye me-1"></i>View Instances
+                        </button>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="text-center py-4">
+            <i class="bi bi-layers display-4 text-muted"></i>
+            <p class="mt-2 text-muted">No series found for this study.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

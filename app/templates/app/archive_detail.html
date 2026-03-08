@@ -1,0 +1,273 @@
+{% extends 'app/base.html' %}
+
+{% block title %}Archive Details{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+    <a href="{% url 'dicom_archive_list' %}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-left me-1"></i>Back to Archives
+    </a>
+</div>
+
+<div class="card shadow">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h4 class="mb-0"><i class="bi bi-file-zip me-2"></i>Archive Details</h4>
+        <span class="badge {% if archive.archive_extracted %}bg-success{% else %}bg-warning text-dark{% endif %} fs-6">
+            {% if archive.archive_extracted %}
+                <i class="bi bi-check-circle me-1"></i>Processed
+            {% else %}
+                <i class="bi bi-clock me-1"></i>Pending
+            {% endif %}
+        </span>
+    </div>
+    <div class="card-body">
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <table class="table table-borderless">
+                    <tr>
+                        <td class="text-muted">Filename:</td>
+                        <td><strong>{{ archive.file.name|cut:"dicom_zip_files/" }}</strong></td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Uploaded:</td>
+                        <td>{{ archive.created_at|date:"Y-m-d H:i:s" }}</td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Last Modified:</td>
+                        <td>{{ archive.modified_at|date:"Y-m-d H:i:s" }}</td>
+                    </tr>
+                </table>
+            </div>
+            <div class="col-md-6">
+                <table class="table table-borderless">
+                    <tr>
+                        <td class="text-muted">Extracted:</td>
+                        <td>
+                            {% if archive.archive_extracted %}
+                                <span class="text-success"><i class="bi bi-check-circle me-1"></i>Yes</span>
+                            {% else %}
+                                <span class="text-warning"><i class="bi bi-x-circle me-1"></i>No</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Extraction Date:</td>
+                        <td>
+                            {% if archive.archive_extraction_date_time %}
+                                {{ archive.archive_extraction_date_time|date:"Y-m-d H:i:s" }}
+                            {% else %}
+                                <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+
+        {% if not archive.archive_extracted %}
+        <div class="alert alert-info">
+            <i class="bi bi-info-circle me-2"></i>
+            This archive has not been processed yet. Click the button below to extract DICOM metadata and save it to the database.
+        </div>
+
+        <div class="text-center" id="processBtnContainer">
+            {% csrf_token %}
+            <button id="processBtn" class="btn btn-lg btn-primary">
+                <i class="bi bi-gear me-2"></i>Process DICOM Archive
+            </button>
+        </div>
+
+        <div id="progress-wrapper" class="mt-4 d-none">
+            <div class="progress-wrapper">
+                <div class="progress" style="height: 30px;">
+                    <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated bg-primary"
+                         role="progressbar" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+                        0%
+                    </div>
+                </div>
+                <div id="progress-info" class="text-center mt-2 text-muted">Waiting to start...</div>
+            </div>
+        </div>
+
+        <div id="resultMessage" class="mt-4"></div>
+        {% else %}
+        <div class="alert alert-success">
+            <i class="bi bi-check-circle me-2"></i>
+            This archive has been successfully processed. The DICOM metadata has been extracted and saved to the database.
+        </div>
+        <div class="text-center">
+            <a href="{% url 'patient_list' %}" class="btn btn-primary">
+                <i class="bi bi-people me-1"></i>View Patients
+            </a>
+        </div>
+        {% endif %}
+    </div>
+    <div class="card-footer text-end">
+        <a href="{% url 'dicom_archive_delete' archive.pk %}" class="btn btn-outline-danger btn-sm">
+            <i class="bi bi-trash me-1"></i>Delete Archive
+        </a>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const processBtn = document.getElementById('processBtn');
+    const processBtnContainer = document.getElementById('processBtnContainer');
+    const progressWrapper = document.getElementById('progress-wrapper');
+    const progressBar = document.getElementById('progress-bar');
+    const progressInfo = document.getElementById('progress-info');
+    const resultMessage = document.getElementById('resultMessage');
+
+    function updateProgress(progress, info) {
+        progressBar.style.width = progress + '%';
+        progressBar.setAttribute('aria-valuenow', progress);
+        progressBar.textContent = progress + '%';
+        if (info) {
+            progressInfo.textContent = info;
+        }
+
+        if (progress >= 90) {
+            progressBar.classList.remove('bg-primary', 'bg-info', 'bg-warning');
+            progressBar.classList.add('bg-success');
+        } else if (progress >= 50) {
+            progressBar.classList.remove('bg-primary', 'bg-warning');
+            progressBar.classList.add('bg-info');
+        } else if (progress >= 25) {
+            progressBar.classList.remove('bg-primary');
+            progressBar.classList.add('bg-warning');
+        }
+    }
+
+    function connectToTask(taskId) {
+        const progressUrl = `/celery-progress/${taskId}/`;
+        let retryCount = 0;
+
+        function poll() {
+            fetch(progressUrl)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Progress endpoint not available');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    retryCount = 0;
+
+                    if (data.complete) {
+                        updateProgress(100, 'Complete!');
+                        handleProcessingComplete(data.result);
+                    } else {
+                        const percent = Math.round((data.current / data.total) * 100);
+                        updateProgress(percent, data.description || 'Processing...');
+                        setTimeout(poll, 500);
+                    }
+                })
+                .catch(error => {
+                    retryCount++;
+                    if (retryCount < 3) {
+                        setTimeout(poll, 1000);
+                    } else {
+                        progressInfo.textContent = 'Error checking progress: ' + error.message;
+                        processBtnContainer.classList.remove('d-none');
+                        processBtn.disabled = false;
+                    }
+                });
+        }
+
+        poll();
+    }
+
+    function handleProcessingComplete(result) {
+        progressWrapper.classList.add('d-none');
+
+        if (result && result.success) {
+            resultMessage.innerHTML = `
+                <div class="alert alert-success">
+                    <h5><i class="bi bi-check-circle me-2"></i>Processing Complete!</h5>
+                    <p class="mb-2">Successfully processed <strong>${result.processed_files}</strong> DICOM files.</p>
+                    <ul class="mb-0">
+                        <li>Patients created: <strong>${result.patients_created}</strong></li>
+                        <li>Studies created: <strong>${result.studies_created}</strong></li>
+                        <li>Series created: <strong>${result.series_created}</strong></li>
+                        <li>Instances created: <strong>${result.instances_created}</strong></li>
+                    </ul>
+                    ${result.errors && result.errors.length > 0 ? `<p class="mt-2 text-warning"><i class="bi bi-exclamation-triangle me-1"></i>${result.errors.length} files had errors.</p>` : ''}
+                    <div class="mt-3">
+                        <a href="{% url 'patient_list' %}" class="btn btn-success">
+                            <i class="bi bi-people me-1"></i>View Patients
+                        </a>
+                    </div>
+                </div>
+            `;
+            setTimeout(() => { window.location.reload(); }, 3000);
+        } else if (result && result.error) {
+            resultMessage.innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    <strong>Error:</strong> ${result.error}
+                </div>
+            `;
+            processBtnContainer.classList.remove('d-none');
+            processBtn.disabled = false;
+        } else {
+            resultMessage.innerHTML = `
+                <div class="alert alert-success">
+                    <h5><i class="bi bi-check-circle me-2"></i>Processing Complete!</h5>
+                    <a href="{% url 'patient_list' %}" class="btn btn-success">
+                        <i class="bi bi-people me-1"></i>View Patients
+                    </a>
+                </div>
+            `;
+            setTimeout(() => { window.location.reload(); }, 3000);
+        }
+    }
+
+    if (processBtn) {
+        processBtn.addEventListener('click', function() {
+            processBtnContainer.classList.add('d-none');
+            progressWrapper.classList.remove('d-none');
+            resultMessage.innerHTML = '';
+            updateProgress(0, 'Queuing task...');
+
+            fetch('{% url "dicom_archive_process" archive.pk %}', {
+                method: 'POST',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (!data.success) {
+                    progressWrapper.classList.add('d-none');
+                    resultMessage.innerHTML = `
+                        <div class="alert alert-danger">
+                            <i class="bi bi-exclamation-triangle me-2"></i>
+                            <strong>Error:</strong> ${data.error || 'Failed to queue task'}
+                        </div>
+                    `;
+                    processBtnContainer.classList.remove('d-none');
+                    processBtn.disabled = false;
+                } else if (data.task_id) {
+                    updateProgress(0, 'Task started...');
+                    connectToTask(data.task_id);
+                }
+            })
+            .catch(error => {
+                progressWrapper.classList.add('d-none');
+                resultMessage.innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        <strong>Error:</strong> ${error.message}
+                    </div>
+                `;
+                processBtnContainer.classList.remove('d-none');
+                processBtn.disabled = false;
+            });
+        });
+    }
+});
+</script>
+{% endblock %}

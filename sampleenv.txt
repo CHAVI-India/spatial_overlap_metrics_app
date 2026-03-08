@@ -5,4 +5,6 @@ DJANGO_DB_NAME=spatialmetrics
 DJANGO_DB_USER=<username>
 DJANGO_DB_PASSWORD=<your-password>
 DJANGO_DB_HOST=localhost
-DJANGO_DB_PORT=5423
+DJANGO_DB_PORT=5432
+DJANGO_CELERY_BROKER_URL=amqp://guest:guest@localhost:5672//
+DJANGO_CELERY_RESULT_BACKEND=rpc://

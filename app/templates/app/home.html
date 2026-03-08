@@ -1,0 +1,50 @@
+{% extends 'app/base.html' %}
+
+{% block title %}Home - DICOM Spatial Metrics{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8 text-center py-5">
+        <h1 class="display-4 mb-4">
+            <i class="bi bi-heart-pulse text-primary"></i>
+            DICOM Spatial Metrics
+        </h1>
+        <p class="lead mb-5">
+            A web application for processing and analyzing DICOM medical imaging data.
+            Upload DICOM archives, extract metadata, and calculate spatial overlap metrics.
+        </p>
+        <div class="row g-4">
+            <div class="col-md-4">
+                <div class="card h-100 border-0 shadow-sm">
+                    <div class="card-body">
+                        <i class="bi bi-upload display-4 text-success mb-3"></i>
+                        <h5 class="card-title">Upload</h5>
+                        <p class="card-text">Upload ZIP archives containing DICOM files.</p>
+                        <a href="{% url 'dicom_archive_upload' %}" class="btn btn-outline-success">Upload Archive</a>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card h-100 border-0 shadow-sm">
+                    <div class="card-body">
+                        <i class="bi bi-folder display-4 text-info mb-3"></i>
+                        <h5 class="card-title">Manage</h5>
+                        <p class="card-text">View and process uploaded DICOM archives.</p>
+                        <a href="{% url 'dicom_archive_list' %}" class="btn btn-outline-info">View Archives</a>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card h-100 border-0 shadow-sm">
+                    <div class="card-body">
+                        <i class="bi bi-people display-4 text-primary mb-3"></i>
+                        <h5 class="card-title">Patients</h5>
+                        <p class="card-text">Browse patient data and studies.</p>
+                        <a href="{% url 'patient_list' %}" class="btn btn-outline-primary">View Patients</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

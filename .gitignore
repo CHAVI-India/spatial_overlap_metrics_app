@@ -89,3 +89,6 @@ local_settings.py
 db.sqlite3
 
 venv/
+dicom_files/
+*.dcm
+media/dicom_zip_files/
