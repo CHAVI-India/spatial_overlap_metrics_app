@@ -343,14 +343,11 @@ def get_roi_nifti_path(roi) -> Optional[Path]:
                 return nifti_path
         
         elif roi.staple_roi:
-            staple_instance = roi.staple_roi.instance
-            series = staple_instance.series
-            if not series.nifti_file_path:
+            # STAPLE ROIs have the file path stored in the database
+            if not roi.staple_roi.staple_roi_file_path:
                 return None
             
-            nifti_dir = Path(settings.MEDIA_ROOT) / series.nifti_file_path
-            roi_filename = sanitize_for_path(roi.roi_name)
-            nifti_path = nifti_dir / f"{roi_filename}.nii.gz"
+            nifti_path = Path(settings.MEDIA_ROOT) / roi.staple_roi.staple_roi_file_path
             
             if nifti_path.exists():
                 return nifti_path
@@ -385,16 +382,22 @@ def get_rois_for_series(series_instance_uid: str) -> List:
             instance__in=rtstruct_instances
         )
         
-        staple_instances = DICOMInstance.objects.filter(
-            referenced_series_instance_uid=image_series,
-            stapleroi__isnull=False
-        )
+        # Get STAPLE ROIs for this image series
+        # StapleROI.instance points to the image series instance
+        # RTStructROI with staple_roi set and instance=None are STAPLE results
+        image_instances = DICOMInstance.objects.filter(series=image_series)
+        logger.info(f"  Found {image_instances.count()} image instances for series {series_instance_uid[-8:]}")
         
         staple_rois = RTStructROI.objects.filter(
-            staple_roi__instance__in=staple_instances
+            staple_roi__instance__in=image_instances,
+            instance__isnull=True  # STAPLE results have no instance, only staple_roi
         )
+        logger.info(f"  Found {staple_rois.count()} STAPLE ROIs for series {series_instance_uid[-8:]}")
+        for sr in staple_rois:
+            logger.info(f"    STAPLE ROI: {sr.roi_name} (ID: {sr.id})")
         
         all_rois = list(rois) + list(staple_rois)
+        logger.info(f"  Total ROIs before NIfTI filter: {len(all_rois)} (regular: {len(rois)}, STAPLE: {len(staple_rois)})")
         
         available_rois = [roi for roi in all_rois if get_roi_nifti_path(roi) is not None]
         

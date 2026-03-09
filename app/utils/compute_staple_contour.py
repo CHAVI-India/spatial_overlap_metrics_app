@@ -182,8 +182,12 @@ def compute_staple_contour(
                 errors.append("No DICOM instance found for image series")
                 return None, errors
             
+            # Get relative path for database storage
+            relative_path = output_path.relative_to(settings.MEDIA_ROOT)
+            
             staple_roi = StapleROI.objects.create(
-                instance=image_instance
+                instance=image_instance,
+                staple_roi_file_path=str(relative_path)
             )
             
             # Create RTStructROI entry for the STAPLE result

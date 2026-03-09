@@ -68,6 +68,7 @@ class StapleROI(models.Model):
     This model will store information about the STAPLE ROI. It is linked to the RTStructROI model.
     '''
     instance = models.ForeignKey(DICOMInstance, on_delete=models.CASCADE)
+    staple_roi_file_path = models.CharField(max_length=512, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     modified_at = models.DateTimeField(auto_now=True)
     

@@ -95,3 +95,4 @@ dicom_files/
 media/dicom_zip_files/
 media/nifti_files/
 media/visualizations/
+logs/

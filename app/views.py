@@ -1210,10 +1210,18 @@ def spatial_overlap_metrics(request):
     for img_series in image_series_list:
         # Get all ROIs for this series (already filtered for NIfTI availability)
         rois = get_rois_for_series(img_series.series_instance_uid)
+        logger.info(f"Series {img_series.series_instance_uid[-8:]}: Found {len(rois)} ROIs")
         
         for roi in rois:
+            # STAPLE ROIs have staple_roi set AND instance is None
+            # Regular ROIs have instance set (even if they're linked to a STAPLE via staple_roi)
+            roi_type = 'STAPLE' if (roi.staple_roi and not roi.instance) else 'RTStruct'
+            logger.info(f"  ROI: {roi.roi_name} (ID: {roi.id}, Type: {roi_type}, instance: {roi.instance is not None}, staple_roi: {roi.staple_roi is not None})")
             roi_name = roi.roi_name
-            roi_type = 'STAPLE' if roi.staple_roi else 'RTStruct'
+            
+            # Normalize ROI name - remove STAPLE_ prefix for grouping
+            # STAPLE ROIs are named "STAPLE_<structure_name>" but should group with "<structure_name>"
+            base_roi_name = roi_name.replace('STAPLE_', '') if roi_name.startswith('STAPLE_') else roi_name
             
             # Get source structure set information
             if roi.instance:
@@ -1227,7 +1235,7 @@ def spatial_overlap_metrics(request):
             
             instance_data = {
                 'roi_id': roi.id,
-                'roi_name': roi_name,
+                'roi_name': roi_name,  # Keep original name for display
                 'roi_type': roi_type,
                 'series_id': img_series.id,
                 'series_uid': img_series.series_instance_uid,
@@ -1237,24 +1245,31 @@ def spatial_overlap_metrics(request):
                 'source_label': source_label
             }
             
-            roi_data[roi_name]['roi_name'] = roi_name
+            # Use base_roi_name for grouping
+            roi_data[base_roi_name]['roi_name'] = base_roi_name
             
             if roi_type == 'STAPLE':
                 # Only add STAPLE instance once per ROI name (deduplicate by ROI ID)
-                if roi.id not in roi_data[roi_name]['seen_staple_ids']:
-                    roi_data[roi_name]['seen_staple_ids'].add(roi.id)
-                    roi_data[roi_name]['staple_instances'].append(instance_data)
-                    roi_data[roi_name]['has_staple'] = True
-                    roi_data[roi_name]['total_instances'] += 1
+                if roi.id not in roi_data[base_roi_name]['seen_staple_ids']:
+                    roi_data[base_roi_name]['seen_staple_ids'].add(roi.id)
+                    roi_data[base_roi_name]['staple_instances'].append(instance_data)
+                    roi_data[base_roi_name]['has_staple'] = True
+                    roi_data[base_roi_name]['total_instances'] += 1
+                    logger.info(f"    Added STAPLE instance for {base_roi_name}, total STAPLE: {len(roi_data[base_roi_name]['staple_instances'])}")
+                else:
+                    logger.info(f"    Skipped duplicate STAPLE ID {roi.id} for {base_roi_name}")
             else:
-                roi_data[roi_name]['regular_instances'].append(instance_data)
-                roi_data[roi_name]['total_instances'] += 1
+                roi_data[base_roi_name]['regular_instances'].append(instance_data)
+                roi_data[base_roi_name]['total_instances'] += 1
+                logger.info(f"    Added regular instance for {base_roi_name}, total regular: {len(roi_data[base_roi_name]['regular_instances'])}")
     
     # Convert to lists and sort
     roi_list = []
     roi_list_json = []
     
+    logger.info("=== FINAL ROI DATA SUMMARY ===")
     for roi_name, data in roi_data.items():
+        logger.info(f"{roi_name}: {len(data['regular_instances'])} regular, {len(data['staple_instances'])} STAPLE")
         roi_list.append(data)
         roi_list_json.append({
             'roi_name': roi_name,
