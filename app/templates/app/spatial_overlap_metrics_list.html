@@ -28,11 +28,17 @@
                             <th>Reference ROI</th>
                             <th>Target ROI</th>
                             <th class="text-center">DSC</th>
+                            <th class="text-center">Jaccard</th>
                             <th class="text-center">HD95 (mm)</th>
                             <th class="text-center">MSD (mm)</th>
                             <th class="text-center">APL (mm)</th>
-                            <th class="text-center">UMDC (mm)</th>
                             <th class="text-center">OMDC (mm)</th>
+                            <th class="text-center">UMDC (mm)</th>
+                            <th class="text-center">MDC (mm)</th>
+                            <th class="text-center">VOE</th>
+                            <th class="text-center">VI</th>
+                            <th class="text-center">Cosine</th>
+                            <th class="text-center">Surface DSC</th>
                             <th>Computed</th>
                         </tr>
                     </thead>
@@ -67,7 +73,14 @@
                             </td>
                             <td class="text-center">
                                 {% if result.metrics.DSC != None %}
-                                    <span class="badge bg-primary">{{ result.metrics.DSC|floatformat:4 }}</span>
+                                    {{ result.metrics.DSC|floatformat:4 }}
+                                {% else %}
+                                    <span class="text-muted">N/A</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                {% if result.metrics.Jaccard != None %}
+                                    {{ result.metrics.Jaccard|floatformat:4 }}
                                 {% else %}
                                     <span class="text-muted">N/A</span>
                                 {% endif %}
@@ -94,6 +107,13 @@
                                 {% endif %}
                             </td>
                             <td class="text-center">
+                                {% if result.metrics.OMDC != None %}
+                                    {{ result.metrics.OMDC|floatformat:2 }}
+                                {% else %}
+                                    <span class="text-muted">N/A</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
                                 {% if result.metrics.UMDC != None %}
                                     {{ result.metrics.UMDC|floatformat:2 }}
                                 {% else %}
@@ -101,8 +121,36 @@
                                 {% endif %}
                             </td>
                             <td class="text-center">
-                                {% if result.metrics.OMDC != None %}
-                                    {{ result.metrics.OMDC|floatformat:2 }}
+                                {% if result.metrics.MDC != None %}
+                                    {{ result.metrics.MDC|floatformat:2 }}
+                                {% else %}
+                                    <span class="text-muted">N/A</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                {% if result.metrics.VOE != None %}
+                                    {{ result.metrics.VOE|floatformat:4 }}
+                                {% else %}
+                                    <span class="text-muted">N/A</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                {% if result.metrics.VI != None %}
+                                    {{ result.metrics.VI|floatformat:4 }}
+                                {% else %}
+                                    <span class="text-muted">N/A</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                {% if result.metrics.Cosine != None %}
+                                    {{ result.metrics.Cosine|floatformat:4 }}
+                                {% else %}
+                                    <span class="text-muted">N/A</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                {% if result.metrics.SurfaceDSC != None %}
+                                    {{ result.metrics.SurfaceDSC|floatformat:4 }}
                                 {% else %}
                                     <span class="text-muted">N/A</span>
                                 {% endif %}
@@ -131,23 +179,41 @@
         </div>
         <div class="card-body">
             <div class="row">
-                <div class="col-md-4">
-                    <strong>DSC:</strong> Dice Similarity Coefficient (0-1, higher is better)
+                <div class="col-md-3">
+                    <strong>DSC:</strong> Dice Similarity Coefficient (0-1, higher better)
                 </div>
-                <div class="col-md-4">
-                    <strong>HD95:</strong> Hausdorff Distance 95th percentile (mm, lower is better)
+                <div class="col-md-3">
+                    <strong>Jaccard:</strong> Jaccard Index (0-1, higher better)
                 </div>
-                <div class="col-md-4">
-                    <strong>MSD:</strong> Mean Surface Distance (mm, lower is better)
+                <div class="col-md-3">
+                    <strong>HD95:</strong> Hausdorff Distance 95% (mm, lower better)
                 </div>
-                <div class="col-md-4 mt-2">
-                    <strong>APL:</strong> Added Path Length (mm, lower is better)
+                <div class="col-md-3">
+                    <strong>MSD:</strong> Mean Surface Distance (mm, lower better)
                 </div>
-                <div class="col-md-4 mt-2">
-                    <strong>UMDC:</strong> Undercontouring Mean Distance to Conformity (mm)
+                <div class="col-md-3 mt-2">
+                    <strong>APL:</strong> Added Path Length (mm, lower better)
                 </div>
-                <div class="col-md-4 mt-2">
-                    <strong>OMDC:</strong> Overcontouring Mean Distance to Conformity (mm)
+                <div class="col-md-3 mt-2">
+                    <strong>OMDC:</strong> Overcontouring MDC (mm)
+                </div>
+                <div class="col-md-3 mt-2">
+                    <strong>UMDC:</strong> Undercontouring MDC (mm)
+                </div>
+                <div class="col-md-3 mt-2">
+                    <strong>MDC:</strong> Mean Distance to Conformity (mm)
+                </div>
+                <div class="col-md-3 mt-2">
+                    <strong>VOE:</strong> Volume Overlap Error (lower better)
+                </div>
+                <div class="col-md-3 mt-2">
+                    <strong>VI:</strong> Variation of Information (lower better)
+                </div>
+                <div class="col-md-3 mt-2">
+                    <strong>Cosine:</strong> Cosine Similarity (0-1, higher better)
+                </div>
+                <div class="col-md-3 mt-2">
+                    <strong>Surface DSC:</strong> Surface Dice with τ=3mm (0-1, higher better)
                 </div>
             </div>
         </div>

@@ -5,13 +5,19 @@ This module calculates spatial overlap metrics between two binary masks from NIf
 Users can select ROI pairs for comparison, and metrics are computed per image series (CT/MR/PET).
 Supports STAPLE contours and regular ROIs.
 
-Required metrics:
-1. Dice similarity coefficient (DSC)
-2. 95% hausdorff distance (HD95)
-3. Added path length (APL)
-4. Mean surface distance (MSD)
-5. Overcontouring MDC (OMDC) 
-6. Undercontouring MDC (UMDC)
+Available metrics:
+1. Dice Similarity Coefficient (DSC)
+2. Jaccard Similarity Coefficient (Jaccard)
+3. 95% Hausdorff Distance (HD95)
+4. Added Path Length (APL)
+5. Mean Surface Distance (MSD)
+6. Overcontouring Mean Distance to Conformity (OMDC)
+7. Undercontouring Mean Distance to Conformity (UMDC)
+8. Mean Distance to Conformity (MDC)
+9. Volume Overlap Error (VOE)
+10. Variation of Information (VI)
+11. Cosine Similarity (Cosine)
+12. Surface Dice Similarity Coefficient (SurfaceDSC)
 
 Reference: https://github.com/CHAVI-India/draw-client-2.0/blob/main/spatial_overlap/utils/metrics.py
 """
@@ -24,6 +30,8 @@ import SimpleITK as sitk
 from scipy.ndimage import distance_transform_edt
 from django.conf import settings
 from django.db import transaction
+from sklearn.metrics.pairwise import cosine_similarity as sklearn_cosine_similarity
+from sklearn.metrics import mutual_info_score
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +56,185 @@ def dice_similarity(volume1, volume2):
     return (2. * intersection) / (size1 + size2)
 
 
+def jaccard_similarity(volume1, volume2):
+    """
+    Calculate Jaccard Similarity Coefficient between two binary volumes.
+
+    Args:
+        volume1 (numpy.ndarray): First binary volume.
+        volume2 (numpy.ndarray): Second binary volume.
+
+    Returns:
+        float: Jaccard Similarity Coefficient.
+    """
+    intersection = np.sum((volume1 > 0) & (volume2 > 0))
+    union = np.sum((volume1 > 0) | (volume2 > 0))
+
+    if union == 0:
+        return 1.0
+    return intersection / union
+
+
+def volume_overlap_error(volume1, volume2):
+    """
+    Calculate Volume Overlap Error between two binary volumes.
+
+    Args:
+        volume1 (numpy.ndarray): First binary volume.
+        volume2 (numpy.ndarray): Second binary volume.
+
+    Returns:
+        float: Volume Overlap Error.
+    """
+    intersection = np.sum((volume1 > 0) & (volume2 > 0))
+    union = np.sum((volume1 > 0) | (volume2 > 0))
+
+    if union == 0:
+        return 0.0
+    return 1 - (intersection / union)
+
+
+def variation_of_information(volume1, volume2):
+    """
+    Calculate Variation of Information between two binary volumes.
+
+    Args:
+        volume1 (numpy.ndarray): First binary volume.
+        volume2 (numpy.ndarray): Second binary volume.
+
+    Returns:
+        float: Variation of Information.
+    """
+    volume1_flat = volume1.flatten()
+    volume2_flat = volume2.flatten()
+    
+    h1 = mutual_info_score(volume1_flat, volume1_flat)
+    h2 = mutual_info_score(volume2_flat, volume2_flat)
+    mi = mutual_info_score(volume1_flat, volume2_flat)
+
+    return h1 + h2 - 2 * mi
+
+
+def cosine_similarity(volume1, volume2):
+    """
+    Calculate Cosine Similarity between two binary volumes.
+
+    Args:
+        volume1 (numpy.ndarray): First binary volume.
+        volume2 (numpy.ndarray): Second binary volume.
+
+    Returns:
+        float: Cosine Similarity.
+    """
+    volume1_flat = volume1.flatten().reshape(1, -1)
+    volume2_flat = volume2.flatten().reshape(1, -1)
+
+    return sklearn_cosine_similarity(volume1_flat, volume2_flat)[0][0]
+
+
+def surface_dsc(volume1, volume2, tau=3.0, spacing=(1.0, 1.0, 1.0)):
+    """
+    Calculate Surface Dice Similarity Coefficient between two binary volumes.
+    
+    From: Nikolov S et al. Clinically Applicable Segmentation of Head and Neck Anatomy for
+    Radiotherapy: Deep Learning Algorithm Development and Validation Study J Med Internet Res
+    2021;23(7):e26151, DOI: 10.2196/26151
+
+    Args:
+        volume1 (numpy.ndarray): First binary volume.
+        volume2 (numpy.ndarray): Second binary volume.
+        tau (float): Accepted deviation between contours in mm. Default is 3.0 mm.
+        spacing (tuple): Voxel spacing in (x, y, z) dimensions in mm.
+
+    Returns:
+        float: Surface Dice Similarity Coefficient (0 to 1, where 1 is perfect agreement).
+    """
+    vol1_binary = (volume1 > 0).astype(np.uint8)
+    vol2_binary = (volume2 > 0).astype(np.uint8)
+
+    if not np.any(vol1_binary) and not np.any(vol2_binary):
+        return 1.0
+    if not np.any(vol1_binary) or not np.any(vol2_binary):
+        return 0.0
+
+    label_a = sitk.GetImageFromArray(vol1_binary)
+    label_a.SetSpacing(spacing)
+
+    label_b = sitk.GetImageFromArray(vol2_binary)
+    label_b.SetSpacing(spacing)
+
+    binary_contour_filter = sitk.BinaryContourImageFilter()
+    binary_contour_filter.FullyConnectedOn()
+    a_contour = binary_contour_filter.Execute(label_a)
+    b_contour = binary_contour_filter.Execute(label_b)
+
+    dist_to_a = sitk.SignedMaurerDistanceMap(
+        a_contour, useImageSpacing=True, squaredDistance=False
+    )
+
+    dist_to_b = sitk.SignedMaurerDistanceMap(
+        b_contour, useImageSpacing=True, squaredDistance=False
+    )
+
+    b_intersection = sitk.GetArrayFromImage(b_contour * (dist_to_a <= tau)).sum()
+    a_intersection = sitk.GetArrayFromImage(a_contour * (dist_to_b <= tau)).sum()
+
+    surface_sum = (
+        sitk.GetArrayFromImage(a_contour).sum()
+        + sitk.GetArrayFromImage(b_contour).sum()
+    )
+
+    if surface_sum == 0:
+        return 0.0
+
+    return (b_intersection + a_intersection) / surface_sum
+
+
+def mean_distance_to_conformity(volume1, volume2, spacing=(1.0, 1.0, 1.0)):
+    """
+    Calculate Mean Distance to Conformity between two binary volumes.
+    
+    MDC measures the average distance from voxels in the symmetric difference
+    (XOR) of two volumes to the nearest boundary of the other volume.
+
+    Args:
+        volume1 (numpy.ndarray): Reference binary volume.
+        volume2 (numpy.ndarray): Test binary volume.
+        spacing (tuple): Voxel spacing in mm.
+
+    Returns:
+        float: Mean Distance to Conformity in mm.
+    """
+    vol1_binary = (volume1 > 0).astype(np.uint8)
+    vol2_binary = (volume2 > 0).astype(np.uint8)
+
+    under_region = vol1_binary & (~vol2_binary)
+    under_coords = np.argwhere(under_region)
+
+    over_region = vol2_binary & (~vol1_binary)
+    over_coords = np.argwhere(over_region)
+
+    under_distances = np.array([])
+    over_distances = np.array([])
+
+    if len(under_coords) > 0:
+        under_distances = _calculate_axis_aligned_distance(under_coords, vol2_binary, spacing)
+
+    if len(over_coords) > 0:
+        over_distances = _calculate_axis_aligned_distance(over_coords, vol1_binary, spacing)
+
+    valid_under = under_distances[~np.isnan(under_distances)] if len(under_distances) > 0 else np.array([])
+    valid_over = over_distances[~np.isnan(over_distances)] if len(over_distances) > 0 else np.array([])
+
+    under_mdc = np.mean(valid_under) if len(valid_under) > 0 else 0.0
+    over_mdc = np.mean(valid_over) if len(valid_over) > 0 else 0.0
+
+    if len(valid_under) == 0 and len(valid_over) == 0:
+        return 0.0
+    
+    return (under_mdc + over_mdc) / 2.0
+
+
 def hausdorff_distance_95(volume1, volume2):
     """
     Calculate Hausdorff Distance 95th percentile between two binary volumes.
@@ -60,17 +247,31 @@ def hausdorff_distance_95(volume1, volume2):
     Returns:
         float: Hausdorff Distance 95th percentile.
     """
+    from scipy.ndimage import binary_erosion
+    
     vol1_binary = volume1 > 0
     vol2_binary = volume2 > 0
     
     if not np.any(vol1_binary) or not np.any(vol2_binary):
         return np.inf
     
+    # Extract surface voxels by subtracting eroded volume from original
+    vol1_surface = vol1_binary & ~binary_erosion(vol1_binary)
+    vol2_surface = vol2_binary & ~binary_erosion(vol2_binary)
+    
+    # Handle edge case where erosion removes everything (very small structures)
+    if not np.any(vol1_surface):
+        vol1_surface = vol1_binary
+    if not np.any(vol2_surface):
+        vol2_surface = vol2_binary
+    
+    # Compute distance transforms
     dist1 = distance_transform_edt(~vol1_binary)
     dist2 = distance_transform_edt(~vol2_binary)
     
-    surface_distances_1_to_2 = dist2[vol1_binary]
-    surface_distances_2_to_1 = dist1[vol2_binary]
+    # Get distances from surface voxels only
+    surface_distances_1_to_2 = dist2[vol1_surface]
+    surface_distances_2_to_1 = dist1[vol2_surface]
     
     hd_95_1_to_2 = np.percentile(surface_distances_1_to_2, 95)
     hd_95_2_to_1 = np.percentile(surface_distances_2_to_1, 95)
@@ -90,17 +291,31 @@ def mean_surface_distance(volume1, volume2):
     Returns:
         float: Mean Surface Distance.
     """
+    from scipy.ndimage import binary_erosion
+    
     vol1_binary = volume1 > 0
     vol2_binary = volume2 > 0
     
     if not np.any(vol1_binary) or not np.any(vol2_binary):
         return np.inf
     
+    # Extract surface voxels by subtracting eroded volume from original
+    vol1_surface = vol1_binary & ~binary_erosion(vol1_binary)
+    vol2_surface = vol2_binary & ~binary_erosion(vol2_binary)
+    
+    # Handle edge case where erosion removes everything (very small structures)
+    if not np.any(vol1_surface):
+        vol1_surface = vol1_binary
+    if not np.any(vol2_surface):
+        vol2_surface = vol2_binary
+    
+    # Compute distance transforms
     dist1 = distance_transform_edt(~vol1_binary)
     dist2 = distance_transform_edt(~vol2_binary)
     
-    surface_distances_1_to_2 = dist2[vol1_binary]
-    surface_distances_2_to_1 = dist1[vol2_binary]
+    # Get distances from surface voxels only
+    surface_distances_1_to_2 = dist2[vol1_surface]
+    surface_distances_2_to_1 = dist1[vol2_surface]
     
     msd1 = np.mean(surface_distances_1_to_2)
     msd2 = np.mean(surface_distances_2_to_1)
@@ -428,13 +643,19 @@ def compute_spatial_overlap_metrics(
     
     results = {
         'DSC': None,
+        'Jaccard': None,
         'HD95': None,
         'APL': None,
         'MSD': None,
         'OMDC': None,
         'UMDC': None,
+        'MDC': None,
+        'VOE': None,
+        'VI': None,
+        'Cosine': None,
+        'SurfaceDSC': None,
         'error': None
-    }
+    }n
     
     try:
         reference_roi = RTStructROI.objects.get(id=reference_roi_id)
@@ -467,11 +688,17 @@ def compute_spatial_overlap_metrics(
         logger.info(f"  Target NIfTI path: {target_nifti_path}")
         
         results['DSC'] = dice_similarity(ref_volume, target_volume)
+        results['Jaccard'] = jaccard_similarity(ref_volume, target_volume)
         results['HD95'] = hausdorff_distance_95(ref_volume, target_volume)
         results['APL'] = added_path_length(ref_volume, target_volume, spacing=spacing)
         results['MSD'] = mean_surface_distance(ref_volume, target_volume)
         results['OMDC'] = overcontouring_mean_distance_to_conformity(ref_volume, target_volume, spacing=spacing)
         results['UMDC'] = undercontouring_mean_distance_to_conformity(ref_volume, target_volume, spacing=spacing)
+        results['MDC'] = mean_distance_to_conformity(ref_volume, target_volume, spacing=spacing)
+        results['VOE'] = volume_overlap_error(ref_volume, target_volume)
+        results['VI'] = variation_of_information(ref_volume, target_volume)
+        results['Cosine'] = cosine_similarity(ref_volume, target_volume)
+        results['SurfaceDSC'] = surface_dsc(ref_volume, target_volume, tau=3.0, spacing=spacing)
         
         if save_to_db:
             with transaction.atomic():
@@ -488,7 +715,7 @@ def compute_spatial_overlap_metrics(
                             )
         
         # Convert numpy types to JSON-serializable Python types for return
-        for key in ['DSC', 'HD95', 'APL', 'MSD', 'OMDC', 'UMDC']:
+        for key in ['DSC', 'Jaccard', 'HD95', 'APL', 'MSD', 'OMDC', 'UMDC', 'MDC', 'VOE', 'VI', 'Cosine', 'SurfaceDSC']:
             if results[key] is not None:
                 val = float(results[key])
                 # Convert inf/nan to None for proper JSON serialization

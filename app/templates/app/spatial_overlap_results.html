@@ -75,93 +75,206 @@
                     </div>
                     {% else %}
                     <div class="row">
-                        <div class="col-md-4 mb-3">
+                        <!-- DSC -->
+                        <div class="col-md-3 col-sm-6 mb-3">
                             <div class="card bg-light">
                                 <div class="card-body text-center">
                                     <h6 class="text-muted mb-1">DSC</h6>
-                                    <h3 class="mb-0 text-primary">
+                                    <h4 class="mb-0">
                                         {% if result.metrics.DSC != None %}
                                             {{ result.metrics.DSC|floatformat:4 }}
                                         {% else %}
                                             N/A
                                         {% endif %}
-                                    </h3>
-                                    <small class="text-muted">Dice Similarity Coefficient</small>
+                                    </h4>
+                                    <small class="text-muted">Dice Similarity</small>
                                 </div>
                             </div>
                         </div>
-                        <div class="col-md-4 mb-3">
+                        
+                        <!-- Jaccard -->
+                        <div class="col-md-3 col-sm-6 mb-3">
+                            <div class="card bg-light">
+                                <div class="card-body text-center">
+                                    <h6 class="text-muted mb-1">Jaccard</h6>
+                                    <h4 class="mb-0">
+                                        {% if result.metrics.Jaccard != None %}
+                                            {{ result.metrics.Jaccard|floatformat:4 }}
+                                        {% else %}
+                                            N/A
+                                        {% endif %}
+                                    </h4>
+                                    <small class="text-muted">Jaccard Index</small>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- HD95 -->
+                        <div class="col-md-3 col-sm-6 mb-3">
                             <div class="card bg-light">
                                 <div class="card-body text-center">
                                     <h6 class="text-muted mb-1">HD95</h6>
-                                    <h3 class="mb-0 text-info">
+                                    <h4 class="mb-0">
                                         {% if result.metrics.HD95 != None %}
                                             {{ result.metrics.HD95|floatformat:2 }}
                                         {% else %}
                                             N/A
                                         {% endif %}
-                                    </h3>
+                                    </h4>
                                     <small class="text-muted">Hausdorff 95% (mm)</small>
                                 </div>
                             </div>
                         </div>
-                        <div class="col-md-4 mb-3">
+                        
+                        <!-- MSD -->
+                        <div class="col-md-3 col-sm-6 mb-3">
                             <div class="card bg-light">
                                 <div class="card-body text-center">
                                     <h6 class="text-muted mb-1">MSD</h6>
-                                    <h3 class="mb-0 text-warning">
+                                    <h4 class="mb-0">
                                         {% if result.metrics.MSD != None %}
                                             {{ result.metrics.MSD|floatformat:2 }}
                                         {% else %}
                                             N/A
                                         {% endif %}
-                                    </h3>
-                                    <small class="text-muted">Mean Surface Distance (mm)</small>
+                                    </h4>
+                                    <small class="text-muted">Mean Surface Dist (mm)</small>
                                 </div>
                             </div>
                         </div>
-                        <div class="col-md-4 mb-3">
+                        
+                        <!-- APL -->
+                        <div class="col-md-3 col-sm-6 mb-3">
                             <div class="card bg-light">
                                 <div class="card-body text-center">
                                     <h6 class="text-muted mb-1">APL</h6>
-                                    <h3 class="mb-0 text-success">
+                                    <h4 class="mb-0">
                                         {% if result.metrics.APL != None %}
                                             {{ result.metrics.APL|floatformat:2 }}
                                         {% else %}
                                             N/A
                                         {% endif %}
-                                    </h3>
+                                    </h4>
                                     <small class="text-muted">Added Path Length (mm)</small>
                                 </div>
                             </div>
                         </div>
-                        <div class="col-md-4 mb-3">
-                            <div class="card bg-light">
-                                <div class="card-body text-center">
-                                    <h6 class="text-muted mb-1">UMDC</h6>
-                                    <h3 class="mb-0 text-danger">
-                                        {% if result.metrics.UMDC != None %}
-                                            {{ result.metrics.UMDC|floatformat:2 }}
-                                        {% else %}
-                                            N/A
-                                        {% endif %}
-                                    </h3>
-                                    <small class="text-muted">Undercontouring MDC (mm)</small>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-md-4 mb-3">
+                        
+                        <!-- OMDC -->
+                        <div class="col-md-3 col-sm-6 mb-3">
                             <div class="card bg-light">
                                 <div class="card-body text-center">
                                     <h6 class="text-muted mb-1">OMDC</h6>
-                                    <h3 class="mb-0 text-secondary">
+                                    <h4 class="mb-0">
                                         {% if result.metrics.OMDC != None %}
                                             {{ result.metrics.OMDC|floatformat:2 }}
                                         {% else %}
                                             N/A
                                         {% endif %}
-                                    </h3>
+                                    </h4>
                                     <small class="text-muted">Overcontouring MDC (mm)</small>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- UMDC -->
+                        <div class="col-md-3 col-sm-6 mb-3">
+                            <div class="card bg-light">
+                                <div class="card-body text-center">
+                                    <h6 class="text-muted mb-1">UMDC</h6>
+                                    <h4 class="mb-0">
+                                        {% if result.metrics.UMDC != None %}
+                                            {{ result.metrics.UMDC|floatformat:2 }}
+                                        {% else %}
+                                            N/A
+                                        {% endif %}
+                                    </h4>
+                                    <small class="text-muted">Undercontouring MDC (mm)</small>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- MDC -->
+                        <div class="col-md-3 col-sm-6 mb-3">
+                            <div class="card bg-light">
+                                <div class="card-body text-center">
+                                    <h6 class="text-muted mb-1">MDC</h6>
+                                    <h4 class="mb-0">
+                                        {% if result.metrics.MDC != None %}
+                                            {{ result.metrics.MDC|floatformat:2 }}
+                                        {% else %}
+                                            N/A
+                                        {% endif %}
+                                    </h4>
+                                    <small class="text-muted">Mean Dist to Conformity (mm)</small>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- VOE -->
+                        <div class="col-md-3 col-sm-6 mb-3">
+                            <div class="card bg-light">
+                                <div class="card-body text-center">
+                                    <h6 class="text-muted mb-1">VOE</h6>
+                                    <h4 class="mb-0">
+                                        {% if result.metrics.VOE != None %}
+                                            {{ result.metrics.VOE|floatformat:4 }}
+                                        {% else %}
+                                            N/A
+                                        {% endif %}
+                                    </h4>
+                                    <small class="text-muted">Volume Overlap Error</small>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- VI -->
+                        <div class="col-md-3 col-sm-6 mb-3">
+                            <div class="card bg-light">
+                                <div class="card-body text-center">
+                                    <h6 class="text-muted mb-1">VI</h6>
+                                    <h4 class="mb-0">
+                                        {% if result.metrics.VI != None %}
+                                            {{ result.metrics.VI|floatformat:4 }}
+                                        {% else %}
+                                            N/A
+                                        {% endif %}
+                                    </h4>
+                                    <small class="text-muted">Variation of Information</small>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Cosine -->
+                        <div class="col-md-3 col-sm-6 mb-3">
+                            <div class="card bg-light">
+                                <div class="card-body text-center">
+                                    <h6 class="text-muted mb-1">Cosine</h6>
+                                    <h4 class="mb-0">
+                                        {% if result.metrics.Cosine != None %}
+                                            {{ result.metrics.Cosine|floatformat:4 }}
+                                        {% else %}
+                                            N/A
+                                        {% endif %}
+                                    </h4>
+                                    <small class="text-muted">Cosine Similarity</small>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Surface DSC -->
+                        <div class="col-md-3 col-sm-6 mb-3">
+                            <div class="card bg-light">
+                                <div class="card-body text-center">
+                                    <h6 class="text-muted mb-1">Surface DSC</h6>
+                                    <h4 class="mb-0">
+                                        {% if result.metrics.SurfaceDSC != None %}
+                                            {{ result.metrics.SurfaceDSC|floatformat:4 }}
+                                        {% else %}
+                                            N/A
+                                        {% endif %}
+                                    </h4>
+                                    <small class="text-muted">Surface Dice (τ=3mm)</small>
                                 </div>
                             </div>
                         </div>
