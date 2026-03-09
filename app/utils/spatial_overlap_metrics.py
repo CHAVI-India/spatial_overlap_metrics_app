@@ -461,6 +461,10 @@ def compute_spatial_overlap_metrics(
         spacing = ref_spacing
         
         logger.info(f"Computing metrics for ROI pair: {reference_roi.roi_name} vs {target_roi.roi_name}")
+        logger.info(f"  Reference volume shape: {ref_volume.shape}, spacing: {ref_spacing}, unique values: {np.unique(ref_volume)}, non-zero voxels: {np.sum(ref_volume > 0)}")
+        logger.info(f"  Target volume shape: {target_volume.shape}, spacing: {target_spacing}, unique values: {np.unique(target_volume)}, non-zero voxels: {np.sum(target_volume > 0)}")
+        logger.info(f"  Reference NIfTI path: {ref_nifti_path}")
+        logger.info(f"  Target NIfTI path: {target_nifti_path}")
         
         results['DSC'] = dice_similarity(ref_volume, target_volume)
         results['HD95'] = hausdorff_distance_95(ref_volume, target_volume)
@@ -473,12 +477,25 @@ def compute_spatial_overlap_metrics(
             with transaction.atomic():
                 for metric_name, metric_value in results.items():
                     if metric_name != 'error' and metric_value is not None:
-                        StructureROIPair.objects.create(
-                            reference_rt_structure_roi=reference_roi,
-                            target_rt_structure_roi=target_roi,
-                            metric_calculated=metric_name,
-                            metric_value=float(metric_value) if not np.isinf(metric_value) else None
-                        )
+                        # Handle inf values for database storage
+                        db_value = float(metric_value) if not np.isinf(metric_value) else None
+                        if db_value is not None:
+                            StructureROIPair.objects.create(
+                                reference_rt_structure_roi=reference_roi,
+                                target_rt_structure_roi=target_roi,
+                                metric_calculated=metric_name,
+                                metric_value=db_value
+                            )
+        
+        # Convert numpy types to JSON-serializable Python types for return
+        for key in ['DSC', 'HD95', 'APL', 'MSD', 'OMDC', 'UMDC']:
+            if results[key] is not None:
+                val = float(results[key])
+                # Convert inf/nan to None for proper JSON serialization
+                if np.isinf(val) or np.isnan(val):
+                    results[key] = None
+                else:
+                    results[key] = val
         
         logger.info(f"Metrics computed successfully: {results}")
         

@@ -105,6 +105,10 @@ def compute_staple_contour(
             # Load the mask
             try:
                 mask = sitk.ReadImage(str(mask_filename))
+                mask_array = sitk.GetArrayFromImage(mask)
+                mask_spacing = mask.GetSpacing()
+                mask_nonzero = np.sum(mask_array > 0)
+                logger.info(f"  Loaded mask: shape={mask_array.shape}, spacing={mask_spacing}, non-zero voxels={mask_nonzero}")
                 segmentations.append(mask)
                 
                 # Get the RTStructROI entry for tracking
@@ -134,8 +138,17 @@ def compute_staple_contour(
         logger.info(f"Computing STAPLE for {structure_name} from {len(segmentations)} segmentations")
         
         try:
-            # Use STAPLE algorithm to get probability map
-            staple_probabilities = sitk.STAPLE(segmentations, foreground_value)
+            # Normalize segmentations to binary 0/1 for STAPLE
+            # Input masks have foreground value 255, but STAPLE expects binary 0/1
+            normalized_segmentations = []
+            for seg in segmentations:
+                # Convert to binary: any non-zero value becomes 1
+                binary_seg = seg > 0
+                binary_seg = sitk.Cast(binary_seg, sitk.sitkUInt8)
+                normalized_segmentations.append(binary_seg)
+            
+            # Use STAPLE algorithm to get probability map (expects foreground_value=1)
+            staple_probabilities = sitk.STAPLE(normalized_segmentations, 1)
             
             # Threshold to get binary segmentation
             staple_segmentation = staple_probabilities > threshold
@@ -145,6 +158,11 @@ def compute_staple_contour(
             
             # Set intensity values
             staple_segmentation = staple_segmentation * 255
+            
+            # Log STAPLE result statistics
+            staple_array = sitk.GetArrayFromImage(staple_segmentation)
+            staple_nonzero = np.sum(staple_array > 0)
+            logger.info(f"STAPLE result: shape={staple_array.shape}, non-zero voxels={staple_nonzero}, unique values={np.unique(staple_array)}")
             
         except Exception as e:
             logger.error(f"STAPLE computation failed: {e}")
