@@ -1,8 +1,9 @@
 {% extends 'app/base.html' %}
 
-{% block title %}NIfTI Files{% endblock %}
+{% block title %}NIfTI Files - STAPLE Computation{% endblock %}
 
 {% block content %}
+{% csrf_token %}
 <div class="mb-4">
     <a href="{% url 'home' %}" class="btn btn-outline-secondary btn-sm">
         <i class="bi bi-arrow-left me-1"></i>Back to Home
@@ -12,64 +13,134 @@
     </a>
 </div>
 
-<div class="card shadow">
+<div class="card shadow mb-4">
     <div class="card-header d-flex justify-content-between align-items-center">
-        <h4 class="mb-0"><i class="bi bi-file-earmark-zip me-2"></i>Converted NIfTI Files</h4>
-        <a href="{% url 'roi_list' %}" class="btn btn-success btn-sm">
-            <i class="bi bi-plus-lg me-1"></i>Convert More
-        </a>
+        <h4 class="mb-0"><i class="bi bi-diagram-3 me-2"></i>Batch STAPLE Computation</h4>
+        <div>
+            <span id="selectedRoisCount" class="badge bg-secondary me-2">0 ROIs selected</span>
+            <button type="button" id="computeBatchStapleBtn" class="btn btn-success btn-sm" disabled>
+                <i class="bi bi-calculator me-1"></i>Compute STAPLE
+            </button>
+        </div>
     </div>
     <div class="card-body">
-        {% if nifti_series %}
-        <div class="table-responsive">
-            <table class="table table-hover">
-                <thead class="table-light">
-                    <tr>
-                        <th>Patient ID</th>
-                        <th>Series Type</th>
-                        <th>Series UID</th>
-                        <th>NIfTI Path</th>
-                        <th class="text-center">Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for series in nifti_series %}
-                    <tr>
-                        <td>
-                            <strong>{{ series.study.patient.patient_id }}</strong>
-                            {% if series.study.patient.patient_name %}
-                            <br><small class="text-muted">{{ series.study.patient.patient_name }}</small>
-                            {% endif %}
-                        </td>
-                        <td>
-                            {% if series.modality == 'RTSTRUCT' %}
-                            <span class="badge bg-warning">RTStruct</span>
-                            {% else %}
-                            <span class="badge bg-primary">{{ series.modality|default:"Image" }}</span>
-                            {% endif %}
-                        </td>
-                        <td>
-                            <code>{{ series.series_instance_uid|truncatechars:40 }}</code>
-                        </td>
-                        <td>
-                            {% if series.nifti_file_path %}
-                            <small class="text-muted">{{ series.nifti_file_path|truncatechars:50 }}</small>
-                            {% else %}
-                            <span class="text-muted">-</span>
-                            {% endif %}
-                        </td>
-                        <td class="text-center">
-                            {% if series.nifti_file_path %}
-                            <a href="{{ MEDIA_URL }}{{ series.nifti_file_path }}" class="btn btn-sm btn-outline-success" download>
-                                <i class="bi bi-download me-1"></i>Download
-                            </a>
-                            {% endif %}
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+        {% if patients_data %}
+        
+        <!-- Global threshold setting -->
+        <div class="mb-3 p-3 bg-light rounded">
+            <div class="row align-items-center">
+                <div class="col-md-6">
+                    <label for="global_threshold" class="form-label mb-0">
+                        <strong>STAPLE Threshold (Global)</strong>
+                        <small class="text-muted d-block">Probability threshold for all computations</small>
+                    </label>
+                </div>
+                <div class="col-md-3">
+                    <input type="number" class="form-control" id="global_threshold" 
+                           value="0.95" min="0" max="1" step="0.05">
+                </div>
+                <div class="col-md-3">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="selectAllRoisBtn">
+                        <i class="bi bi-check-all me-1"></i>Select All
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary ms-1" id="deselectAllRoisBtn">
+                        <i class="bi bi-x-square me-1"></i>Deselect All
+                    </button>
+                </div>
+            </div>
         </div>
+        
+        <!-- Progress Bar -->
+        <div id="batch-progress-wrapper" class="mb-3 d-none">
+            <div class="progress" style="height: 25px;">
+                <div id="batch-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated bg-success" 
+                     role="progressbar" style="width: 0%">0%</div>
+            </div>
+            <div id="batch-progress-info" class="text-center text-muted mt-1">Processing...</div>
+        </div>
+        
+        <div id="batch-result-message" class="mb-3"></div>
+        
+        <!-- Patients with common ROIs -->
+        {% for patient_data in patients_data %}
+        {% if patient_data.has_common_rois %}
+        <div class="card mb-4 patient-card">
+            <div class="card-header bg-light">
+                <div class="row align-items-center">
+                    <div class="col-md-8">
+                        <h5 class="mb-0">
+                            <i class="bi bi-person me-2 text-primary"></i>
+                            <strong>{{ patient_data.patient.patient_id }}</strong>
+                        </h5>
+                        {% if patient_data.patient.patient_name %}
+                        <small class="text-muted">{{ patient_data.patient.patient_name }}</small>
+                        {% endif %}
+                        <br>
+                        <small class="text-muted">
+                            Image Series: <code>{{ patient_data.image_series.series_instance_uid|truncatechars:35 }}</code>
+                        </small>
+                    </div>
+                    <div class="col-md-4 text-end">
+                        <span class="badge bg-info">{{ patient_data.rtstruct_series|length }} Structure Sets</span>
+                        <span class="badge bg-success">{{ patient_data.common_rois|length }} Common ROIs</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card-body">
+                <h6 class="text-muted mb-3">
+                    <i class="bi bi-bullseye me-2"></i>Select ROIs for STAPLE Computation
+                    <small class="text-muted">(ROIs appearing in 2+ structure sets)</small>
+                </h6>
+                
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover">
+                        <thead class="table-light">
+                            <tr>
+                                <th width="50">
+                                    <input type="checkbox" class="form-check-input patient-select-all" 
+                                           data-patient-id="{{ patient_data.patient.id }}">
+                                </th>
+                                <th>ROI Name</th>
+                                <th class="text-center">Available In</th>
+                                <th>Structure Sets</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for roi in patient_data.common_rois %}
+                            <tr>
+                                <td>
+                                    <input type="checkbox" class="form-check-input roi-checkbox" 
+                                           data-image-series-id="{{ patient_data.image_series.id }}"
+                                           data-structure-name="{{ roi.name }}"
+                                           data-rtstruct-ids="{{ roi.available_in|join:',' }}"
+                                           data-patient-id="{{ patient_data.patient.id }}">
+                                </td>
+                                <td>
+                                    <strong>{{ roi.name }}</strong>
+                                </td>
+                                <td class="text-center">
+                                    <span class="badge bg-primary">{{ roi.count }} / {{ patient_data.rtstruct_series|length }}</span>
+                                </td>
+                                <td>
+                                    <small class="text-muted">
+                                        {% for rtstruct in patient_data.rtstruct_series %}
+                                        {% if rtstruct.series_id in roi.available_in %}
+                                        <span class="badge bg-secondary me-1">{{ rtstruct.series.series_instance_uid|truncatechars:20 }}</span>
+                                        {% endif %}
+                                        {% endfor %}
+                                    </small>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+        {% endfor %}
+        
         {% else %}
         <div class="alert alert-info">
             <i class="bi bi-info-circle me-2"></i>
@@ -83,4 +154,230 @@
         {% endif %}
     </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const computeBtn = document.getElementById('computeBatchStapleBtn');
+    const selectedCountBadge = document.getElementById('selectedRoisCount');
+    const progressWrapper = document.getElementById('batch-progress-wrapper');
+    const progressBar = document.getElementById('batch-progress-bar');
+    const progressInfo = document.getElementById('batch-progress-info');
+    const resultMessage = document.getElementById('batch-result-message');
+    
+    // Update selected count
+    function updateSelectedCount() {
+        const count = document.querySelectorAll('.roi-checkbox:checked').length;
+        selectedCountBadge.textContent = count + ' ROI' + (count !== 1 ? 's' : '') + ' selected';
+        computeBtn.disabled = count === 0;
+    }
+    
+    // Handle ROI checkbox changes
+    document.querySelectorAll('.roi-checkbox').forEach(cb => {
+        cb.addEventListener('change', function() {
+            updateSelectedCount();
+            
+            // Update patient select-all checkbox
+            const patientId = this.dataset.patientId;
+            const patientCheckboxes = document.querySelectorAll(`.roi-checkbox[data-patient-id="${patientId}"]`);
+            const patientSelectAll = document.querySelector(`.patient-select-all[data-patient-id="${patientId}"]`);
+            
+            if (patientSelectAll) {
+                const allChecked = Array.from(patientCheckboxes).every(cb => cb.checked);
+                const someChecked = Array.from(patientCheckboxes).some(cb => cb.checked);
+                patientSelectAll.checked = allChecked;
+                patientSelectAll.indeterminate = someChecked && !allChecked;
+            }
+        });
+    });
+    
+    // Handle patient select-all checkboxes
+    document.querySelectorAll('.patient-select-all').forEach(cb => {
+        cb.addEventListener('change', function() {
+            const patientId = this.dataset.patientId;
+            const checked = this.checked;
+            document.querySelectorAll(`.roi-checkbox[data-patient-id="${patientId}"]`).forEach(roiCb => {
+                roiCb.checked = checked;
+            });
+            updateSelectedCount();
+        });
+    });
+    
+    // Select all ROIs button
+    document.getElementById('selectAllRoisBtn').addEventListener('click', function() {
+        document.querySelectorAll('.roi-checkbox').forEach(cb => cb.checked = true);
+        document.querySelectorAll('.patient-select-all').forEach(cb => cb.checked = true);
+        updateSelectedCount();
+    });
+    
+    // Deselect all ROIs button
+    document.getElementById('deselectAllRoisBtn').addEventListener('click', function() {
+        document.querySelectorAll('.roi-checkbox').forEach(cb => cb.checked = false);
+        document.querySelectorAll('.patient-select-all').forEach(cb => {
+            cb.checked = false;
+            cb.indeterminate = false;
+        });
+        updateSelectedCount();
+    });
+    
+    // Compute batch STAPLE button
+    computeBtn.addEventListener('click', function() {
+        const selectedCheckboxes = document.querySelectorAll('.roi-checkbox:checked');
+        const threshold = parseFloat(document.getElementById('global_threshold').value);
+        
+        if (selectedCheckboxes.length === 0) {
+            alert('Please select at least one ROI for STAPLE computation');
+            return;
+        }
+        
+        // Build batch data
+        const batchData = Array.from(selectedCheckboxes).map(cb => ({
+            image_series_id: parseInt(cb.dataset.imageSeriesId),
+            structure_name: cb.dataset.structureName,
+            rtstruct_series_ids: cb.dataset.rtstructIds.split(',').map(id => parseInt(id)),
+            threshold: threshold
+        }));
+        
+        // Disable button
+        computeBtn.disabled = true;
+        computeBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Computing...';
+        
+        // Show progress bar
+        progressWrapper.classList.remove('d-none');
+        resultMessage.innerHTML = '';
+        
+        // Get CSRF token
+        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+        
+        // Submit batch STAPLE request
+        fetch('{% url "compute_batch_staple" %}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRFToken': csrfToken
+            },
+            body: new URLSearchParams({
+                'batch_data': JSON.stringify(batchData),
+                'csrfmiddlewaretoken': csrfToken
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.task_id) {
+                pollBatchProgress(data.task_id, data.total_requests);
+            } else {
+                handleBatchError(data.error || 'Batch STAPLE computation failed');
+            }
+        })
+        .catch(error => {
+            handleBatchError('Error: ' + error.message);
+        });
+    });
+    
+    // Poll for batch STAPLE progress
+    function pollBatchProgress(taskId, totalRequests) {
+        const progressUrl = `/celery-progress/${taskId}/`;
+        let retryCount = 0;
+        
+        function poll() {
+            fetch(progressUrl)
+                .then(response => response.json())
+                .then(data => {
+                    retryCount = 0;
+                    
+                    const progress = data.progress || {};
+                    const current = progress.current || 0;
+                    const total = progress.total || 100;
+                    const description = progress.description || data.description || 'Processing...';
+                    const complete = data.complete || data.state === 'SUCCESS' || data.state === 'FAILURE';
+                    
+                    if (complete) {
+                        handleBatchComplete(data, totalRequests);
+                    } else {
+                        const percent = total > 0 ? Math.round((current / total) * 100) : 0;
+                        updateBatchProgress(percent, description);
+                        setTimeout(poll, 1000);
+                    }
+                })
+                .catch(error => {
+                    retryCount++;
+                    if (retryCount < 5) {
+                        setTimeout(poll, 2000);
+                    } else {
+                        handleBatchError('Lost connection to server');
+                    }
+                });
+        }
+        
+        poll();
+    }
+    
+    // Update batch progress bar
+    function updateBatchProgress(percent, message) {
+        progressBar.style.width = percent + '%';
+        progressBar.setAttribute('aria-valuenow', percent);
+        progressBar.textContent = percent + '%';
+        progressInfo.textContent = message;
+    }
+    
+    // Handle batch completion
+    function handleBatchComplete(data, totalRequests) {
+        updateBatchProgress(100, 'Complete!');
+        
+        if (data.state === 'SUCCESS') {
+            const result = data.result || {};
+            const completed = result.completed || 0;
+            const failed = result.failed || 0;
+            
+            resultMessage.innerHTML = `
+                <div class="alert alert-success">
+                    <i class="bi bi-check-circle me-2"></i>
+                    <strong>Batch STAPLE Computation Complete!</strong><br>
+                    Successfully computed: ${completed} / ${totalRequests} ROIs<br>
+                    ${failed > 0 ? `Failed: ${failed} ROIs` : ''}
+                </div>
+            `;
+            
+            // Reload page after 3 seconds
+            setTimeout(() => {
+                window.location.reload();
+            }, 3000);
+        } else {
+            const errorMsg = data.result?.errors?.join(', ') || 'Unknown error occurred';
+            resultMessage.innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    <strong>Error:</strong> ${errorMsg}
+                </div>
+            `;
+            
+            computeBtn.disabled = false;
+            computeBtn.innerHTML = '<i class="bi bi-calculator me-1"></i>Compute STAPLE';
+        }
+    }
+    
+    // Handle batch error
+    function handleBatchError(errorMsg) {
+        resultMessage.innerHTML = `
+            <div class="alert alert-danger">
+                <i class="bi bi-exclamation-triangle me-2"></i>
+                <strong>Error:</strong> ${errorMsg}
+            </div>
+        `;
+        
+        progressWrapper.classList.add('d-none');
+        computeBtn.disabled = false;
+        computeBtn.innerHTML = '<i class="bi bi-calculator me-1"></i>Compute STAPLE';
+    }
+});
+</script>
+
+<style>
+.patient-card {
+    border-left: 4px solid #0d6efd;
+}
+.roi-checkbox, .patient-select-all {
+    cursor: pointer;
+}
+</style>
 {% endblock %}

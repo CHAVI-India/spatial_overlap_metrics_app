@@ -425,19 +425,222 @@ def nifti_convert(request):
 
 
 def nifti_list(request):
-    """View to list all series that have been converted to NIfTI."""
-    from django.db.models import Q
+    """View to list all NIfTI files grouped by patient, showing image series with their structure sets and common ROIs."""
+    from django.db.models import Count, Q
+    import json
+    from pathlib import Path
+    from django.conf import settings
+    from collections import Counter
     
-    # Get all series with NIfTI files
-    nifti_series = DICOMSeries.objects.filter(
+    # Get all image series (CT/MR) that have NIfTI files
+    image_series = DICOMSeries.objects.filter(
         nifti_file_path__isnull=False
     ).exclude(
-        nifti_file_path=''
+        nifti_file_path='',
+        modality='RTSTRUCT'
     ).select_related(
         'study',
         'study__patient'
     ).order_by(
-        '-modified_at'
+        'study__patient__patient_id',
+        'study__study_instance_uid',
+        'series_instance_uid'
     )
     
-    return render(request, "app/nifti_list.html", {"nifti_series": nifti_series})
+    # Group by patient
+    patients_data = []
+    for img_series in image_series:
+        # Find all RTStruct series that reference this image series
+        rtstruct_series = DICOMSeries.objects.filter(
+            modality='RTSTRUCT',
+            dicominstance__referenced_series_instance_uid=img_series,
+            nifti_file_path__isnull=False
+        ).exclude(
+            nifti_file_path=''
+        ).distinct()
+        
+        # Get structure counts for each RTStruct series and collect all structure names
+        rtstruct_data = []
+        all_structure_names = []
+        
+        for rtstruct in rtstruct_series:
+            # Read metadata to get structure count
+            metadata_path = Path(settings.MEDIA_ROOT) / rtstruct.nifti_file_path / "rtstruct_metadata.json"
+            structure_count = 0
+            structure_names = []
+            
+            if metadata_path.exists():
+                try:
+                    with open(metadata_path, 'r') as f:
+                        metadata = json.load(f)
+                        structure_count = metadata.get('converted_count', 0)
+                        structure_names = [roi['name'] for roi in metadata.get('rois', [])]
+                        all_structure_names.extend(structure_names)
+                except Exception:
+                    pass
+            
+            rtstruct_data.append({
+                'series': rtstruct,
+                'series_id': rtstruct.id,
+                'structure_count': structure_count,
+                'structure_names': structure_names
+            })
+        
+        # Find common ROIs (appearing in 2+ structure sets)
+        structure_counter = Counter(all_structure_names)
+        common_rois = [
+            {
+                'name': name,
+                'count': count,
+                'available_in': [
+                    rs['series_id'] for rs in rtstruct_data 
+                    if name in rs['structure_names']
+                ]
+            }
+            for name, count in structure_counter.items()
+            if count >= 2
+        ]
+        
+        # Sort by count (descending) then by name
+        common_rois.sort(key=lambda x: (-x['count'], x['name']))
+        
+        patients_data.append({
+            'patient': img_series.study.patient,
+            'study': img_series.study,
+            'image_series': img_series,
+            'rtstruct_series': rtstruct_data,
+            'common_rois': common_rois,
+            'has_common_rois': len(common_rois) > 0
+        })
+    
+    return render(request, "app/nifti_list.html", {"patients_data": patients_data})
+
+
+@require_POST
+def compute_staple(request):
+    """View to trigger STAPLE contour computation using Celery."""
+    from app.tasks import compute_staple_task
+    import json
+    
+    # Get parameters from POST request
+    image_series_id = request.POST.get('image_series_id')
+    structure_name = request.POST.get('structure_name')
+    rtstruct_series_ids = request.POST.getlist('rtstruct_series_ids[]')
+    threshold = float(request.POST.get('threshold', 0.95))
+    
+    # Validate inputs
+    if not image_series_id or not structure_name or not rtstruct_series_ids:
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            return JsonResponse({
+                "success": False,
+                "error": "Missing required parameters"
+            })
+        messages.error(request, "Missing required parameters for STAPLE computation.")
+        return redirect("nifti_list")
+    
+    # Convert to integers
+    try:
+        image_series_id = int(image_series_id)
+        rtstruct_series_ids = [int(sid) for sid in rtstruct_series_ids]
+    except ValueError:
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            return JsonResponse({
+                "success": False,
+                "error": "Invalid series IDs"
+            })
+        messages.error(request, "Invalid series IDs.")
+        return redirect("nifti_list")
+    
+    # Validate minimum number of structure sets
+    if len(rtstruct_series_ids) < 2:
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            return JsonResponse({
+                "success": False,
+                "error": "At least 2 structure sets are required for STAPLE computation"
+            })
+        messages.error(request, "At least 2 structure sets are required for STAPLE computation.")
+        return redirect("nifti_list")
+    
+    # Enqueue the STAPLE computation task
+    task = compute_staple_task.delay(
+        image_series_id=image_series_id,
+        structure_name=structure_name,
+        rtstruct_series_ids=rtstruct_series_ids,
+        threshold=threshold
+    )
+    
+    if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+        return JsonResponse({
+            "success": True,
+            "message": f"STAPLE computation queued for structure '{structure_name}'",
+            "task_status": "queued",
+            "task_id": task.id,
+            "structure_name": structure_name,
+            "num_segmentations": len(rtstruct_series_ids)
+        })
+    
+    messages.info(request, f"STAPLE computation task queued for structure '{structure_name}'. This will run in the background.")
+    return redirect("nifti_list")
+
+
+@require_POST
+def compute_batch_staple(request):
+    """View to trigger batch STAPLE contour computation for multiple ROIs across multiple patients."""
+    from app.tasks import compute_batch_staple_task
+    import json
+    
+    # Get batch requests from POST data
+    # Format: [{image_series_id, structure_name, rtstruct_series_ids, threshold}, ...]
+    try:
+        batch_data = json.loads(request.POST.get('batch_data', '[]'))
+    except json.JSONDecodeError:
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            return JsonResponse({
+                "success": False,
+                "error": "Invalid batch data format"
+            })
+        messages.error(request, "Invalid batch data format.")
+        return redirect("nifti_list")
+    
+    if not batch_data:
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            return JsonResponse({
+                "success": False,
+                "error": "No STAPLE computations selected"
+            })
+        messages.error(request, "No STAPLE computations selected.")
+        return redirect("nifti_list")
+    
+    # Validate each request
+    staple_requests = []
+    for item in batch_data:
+        try:
+            staple_requests.append({
+                'image_series_id': int(item['image_series_id']),
+                'structure_name': item['structure_name'],
+                'rtstruct_series_ids': [int(sid) for sid in item['rtstruct_series_ids']],
+                'threshold': float(item.get('threshold', 0.95))
+            })
+        except (KeyError, ValueError) as e:
+            if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+                return JsonResponse({
+                    "success": False,
+                    "error": f"Invalid request data: {str(e)}"
+                })
+            messages.error(request, f"Invalid request data: {str(e)}")
+            return redirect("nifti_list")
+    
+    # Enqueue the batch STAPLE computation task
+    task = compute_batch_staple_task.delay(staple_requests)
+    
+    if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+        return JsonResponse({
+            "success": True,
+            "message": f"Batch STAPLE computation queued for {len(staple_requests)} ROIs",
+            "task_status": "queued",
+            "task_id": task.id,
+            "total_requests": len(staple_requests)
+        })
+    
+    messages.info(request, f"Batch STAPLE computation task queued for {len(staple_requests)} ROIs. This will run in the background.")
+    return redirect("nifti_list")

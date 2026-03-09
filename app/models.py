@@ -87,17 +87,6 @@ class RTStructROI(models.Model):
     modified_at = models.DateTimeField(auto_now=True)
     
     
-    class Meta:
-        constraints = [
-            models.CheckConstraint(
-                condition=(
-                    Q(instance__isnull=False, staple_roi__isnull=True) |
-                    Q(instance__isnull=True, staple_roi__isnull=False)
-                ),
-                name='either_instance_or_staple_roi'
-            )
-        ]
-    
     def __str__(self):
         return self.roi_name
 

@@ -22,4 +22,6 @@ urlpatterns = [
     path("rois/<int:series_id>/", views.roi_detail, name="roi_detail"),
     path("nifti/convert/", views.nifti_convert, name="nifti_convert"),
     path("nifti/", views.nifti_list, name="nifti_list"),
+    path("nifti/staple/compute/", views.compute_staple, name="compute_staple"),
+    path("nifti/staple/batch/", views.compute_batch_staple, name="compute_batch_staple"),
 ]
