@@ -16,6 +16,7 @@ cycler==0.12.1
 dataclasses==0.6
 dcmrtstruct2nii==5
 Django==6.0.3
+django_celery_results==2.6.0
 dotenv==0.9.9
 fonttools==4.61.1
 idna==3.11

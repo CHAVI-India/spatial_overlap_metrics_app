@@ -1375,12 +1375,13 @@ def spatial_overlap_metrics(request):
 @require_POST
 def compute_overlap_metrics(request):
     """API endpoint to trigger Celery task for computing spatial overlap metrics."""
-    from app.tasks import compute_spatial_overlap_task
+    from app.tasks import compute_spatial_overlap_task_parallel
     import json
     
     try:
         # Get parameters from POST request
         roi_pairs_json = request.POST.get('roi_pairs')
+        batch_size = int(request.POST.get('batch_size', 4))  # Default to 4 parallel tasks
         
         if not roi_pairs_json:
             return JsonResponse({
@@ -1396,9 +1397,9 @@ def compute_overlap_metrics(request):
                 "error": "No ROI pairs selected"
             })
         
-        # Trigger Celery task
-        logger.info(f"Triggering Celery task for {len(roi_pairs)} ROI pairs")
-        task = compute_spatial_overlap_task.delay(roi_pairs)
+        # Trigger parallel Celery task
+        logger.info(f"Triggering parallel Celery task for {len(roi_pairs)} ROI pairs (batch_size={batch_size})")
+        task = compute_spatial_overlap_task_parallel.delay(roi_pairs, batch_size=batch_size)
         
         return JsonResponse({
             "success": True,

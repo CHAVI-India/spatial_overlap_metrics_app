@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'app',
     'celery_progress',
+    'django_celery_results',
 ]
 
 MIDDLEWARE = [
@@ -138,13 +139,16 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 # Celery Configuration with RabbitMQ
 # https://docs.celeryq.dev/en/stable/
 CELERY_BROKER_URL = os.getenv('DJANGO_CELERY_BROKER_URL', 'amqp://guest:guest@localhost:5672//')
-CELERY_RESULT_BACKEND = os.getenv('DJANGO_CELERY_RESULT_BACKEND', 'rpc://')
+# Use Django database backend for results (supports chords for parallel tasks)
+CELERY_RESULT_BACKEND = os.getenv('DJANGO_CELERY_RESULT_BACKEND', 'django-db')
+CELERY_CACHE_BACKEND = 'django-cache'
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_TASK_TRACK_STARTED = True
-CELERY_TASK_TIME_LIMIT = 60 * 60  # 1 hour
+CELERY_TASK_TIME_LIMIT = 60 * 60 * 4  # 4 hours (hard limit)
+CELERY_TASK_SOFT_TIME_LIMIT = 60 * 60 * 3.5  # 3.5 hours (soft limit - raises exception)
 
 # Create logs directory if it doesn't exist
 LOGS_DIR = os.path.join(BASE_DIR, 'logs')

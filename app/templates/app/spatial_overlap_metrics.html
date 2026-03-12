@@ -624,8 +624,9 @@ function computeMetrics() {
     .then(response => response.json())
     .then(data => {
         if (data.success && data.task_id) {
-            // Start polling for task status
-            pollTaskStatus(data.task_id, computeBtn);
+            // The main task returns immediately with a chord_id
+            // We need to poll the main task first to get the chord_id, then poll the chord
+            pollParallelTask(data.task_id, computeBtn);
         } else {
             computeBtn.disabled = false;
             computeBtn.innerHTML = '<i class="bi bi-calculator me-2"></i>Compute All Metrics';
@@ -637,6 +638,76 @@ function computeMetrics() {
         computeBtn.innerHTML = '<i class="bi bi-calculator me-2"></i>Compute All Metrics';
         showError('Error: ' + error.message);
     });
+}
+
+function pollParallelTask(taskId, computeBtn) {
+    // First, get the chord_id from the main task
+    fetch(`/celery-progress/${taskId}/`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.state === 'SUCCESS' && data.result && data.result.chord_id) {
+                // Got the chord_id, now poll the chord for actual results
+                console.log('Got chord_id:', data.result.chord_id);
+                computeBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Processing pairs in parallel...';
+                pollChordStatus(data.result.chord_id, computeBtn, data.result.total_pairs || 0);
+            } else if (data.state === 'FAILURE') {
+                computeBtn.disabled = false;
+                computeBtn.innerHTML = '<i class="bi bi-calculator me-2"></i>Compute All Metrics';
+                showError('Failed to start parallel computation: ' + (data.result || 'Unknown error'));
+            } else {
+                // Still waiting for main task to complete
+                setTimeout(() => pollParallelTask(taskId, computeBtn), 500);
+            }
+        })
+        .catch(error => {
+            computeBtn.disabled = false;
+            computeBtn.innerHTML = '<i class="bi bi-calculator me-2"></i>Compute All Metrics';
+            showError('Error: ' + error.message);
+        });
+}
+
+function pollChordStatus(chordId, computeBtn, totalPairs) {
+    const pollInterval = setInterval(() => {
+        fetch(`/celery-progress/${chordId}/`)
+            .then(response => response.json())
+            .then(data => {
+                console.log('Chord status:', data);
+                
+                if (data.state === 'SUCCESS') {
+                    // Chord completed - we have the final results
+                    clearInterval(pollInterval);
+                    console.log('Chord complete, result:', data.result);
+                    
+                    if (data.result && data.result.pair_results) {
+                        // Display results inline
+                        displayResults(data.result.pair_results);
+                        computeBtn.disabled = false;
+                        computeBtn.innerHTML = '<i class="bi bi-check-circle me-2"></i>Computation Complete';
+                        
+                        // Show summary
+                        const completed = data.result.completed || 0;
+                        const failed = data.result.failed || 0;
+                        computeBtn.innerHTML = `<i class="bi bi-check-circle me-2"></i>Complete: ${completed}/${totalPairs} successful`;
+                    } else {
+                        computeBtn.disabled = false;
+                        computeBtn.innerHTML = '<i class="bi bi-calculator me-2"></i>Compute All Metrics';
+                        showError('No results returned from computation');
+                    }
+                } else if (data.state === 'FAILURE') {
+                    clearInterval(pollInterval);
+                    computeBtn.disabled = false;
+                    computeBtn.innerHTML = '<i class="bi bi-calculator me-2"></i>Compute All Metrics';
+                    showError('Computation failed: ' + (data.result || 'Unknown error'));
+                } else if (data.state === 'PENDING' || data.state === 'STARTED') {
+                    // Still processing
+                    computeBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-2"></span>Computing ${totalPairs} pairs in parallel...`;
+                }
+            })
+            .catch(error => {
+                console.error('Error polling chord:', error);
+                // Don't stop polling on error, just log it
+            });
+    }, 1000); // Poll every second
 }
 
 function pollTaskStatus(taskId, computeBtn) {

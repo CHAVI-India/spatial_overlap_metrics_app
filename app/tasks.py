@@ -3,7 +3,9 @@ Celery tasks for the app.
 """
 
 import logging
-from celery import shared_task
+import time
+from celery import shared_task, chain, group, chord
+from celery.exceptions import SoftTimeLimitExceeded
 from celery_progress.backend import ProgressRecorder
 
 from app.models import DICOMSeries
@@ -13,81 +15,123 @@ from app.utils.spatial_overlap_metrics import compute_spatial_overlap_metrics
 logger = logging.getLogger(__name__)
 
 
-@shared_task(bind=True)
-def convert_series_to_nifti(self, series_ids):
+@shared_task(bind=True, time_limit=60*60*3, soft_time_limit=60*60*2.5)
+def convert_series_to_nifti_chunked(self, series_ids, start_index=0, accumulated_results=None):
     """
-    Celery task to convert multiple DICOM series and their associated RTStructs to NIfTI.
+    Celery task to convert DICOM series to NIfTI with chunking support.
+    Can handle timeouts by spawning continuation tasks.
     
     Args:
         series_ids: List of DICOMSeries IDs to convert
+        start_index: Index to start processing from (for continuation)
+        accumulated_results: Results from previous chunks (for continuation)
         
     Returns:
         Dictionary with conversion results for all series
     """
     progress_recorder = ProgressRecorder(self)
     total_series = len(series_ids)
-    results = {
-        'success': True,
-        'total_series': total_series,
-        'processed_series': 0,
-        'failed_series': 0,
-        'series_results': [],
-        'errors': []
-    }
+    start_time = time.time()
+    
+    # Initialize or merge results
+    if accumulated_results is None:
+        results = {
+            'success': True,
+            'total_series': total_series,
+            'processed_series': 0,
+            'failed_series': 0,
+            'series_results': [],
+            'errors': []
+        }
+    else:
+        results = accumulated_results
+        logger.info(f"Continuing from index {start_index}, already processed {results['processed_series']} series")
     
     def progress_callback(pct, message):
         """Update progress for Celery."""
         overall_pct = int((results['processed_series'] / total_series) * 100 + (pct / total_series))
         progress_recorder.set_progress(overall_pct, 100, description=message)
     
-    for idx, series_id in enumerate(series_ids, 1):
-        try:
-            series = DICOMSeries.objects.get(id=series_id)
-            base_message = f"Converting series {idx}/{total_series}: {series.series_instance_uid[:20]}..."
-            progress_recorder.set_progress(
-                int((idx - 1) / total_series * 100),
-                100,
-                description=base_message
-            )
+    # Process series starting from start_index
+    remaining_series = series_ids[start_index:]
+    
+    try:
+        for local_idx, series_id in enumerate(remaining_series):
+            # Check if we're approaching time limit (leave 5 minutes buffer)
+            elapsed_time = time.time() - start_time
+            if elapsed_time > (60 * 60 * 2):  # 2 hours elapsed
+                logger.warning(f"Approaching time limit at {elapsed_time}s, spawning continuation task")
+                # Spawn continuation task for remaining series
+                remaining_ids = series_ids[start_index + local_idx:]
+                if remaining_ids:
+                    logger.info(f"Spawning continuation task for {len(remaining_ids)} remaining series")
+                    convert_series_to_nifti_chunked.apply_async(
+                        args=[remaining_ids, 0, results],
+                        countdown=5
+                    )
+                return results
             
-            # Convert the series and its associated RTStructs
-            result = convert_series_with_rtstructs(series_id, progress_callback)
+            try:
+                idx = start_index + local_idx + 1
+                series = DICOMSeries.objects.get(id=series_id)
+                base_message = f"Converting series {idx}/{total_series}: {series.series_instance_uid[:20]}..."
+                progress_recorder.set_progress(
+                    int((results['processed_series'] / total_series) * 100),
+                    100,
+                    description=base_message
+                )
             
-            if result['success']:
-                results['processed_series'] += 1
-            else:
+                # Convert the series and its associated RTStructs
+                result = convert_series_with_rtstructs(series_id, progress_callback)
+                
+                if result['success']:
+                    results['processed_series'] += 1
+                else:
+                    results['failed_series'] += 1
+                    results['errors'].extend(result.get('errors', []))
+                
+                results['series_results'].append({
+                    'series_id': series_id,
+                    'series_uid': series.series_instance_uid,
+                    'success': result['success'],
+                    'image_nifti': result.get('image_nifti'),
+                    'rtstruct_count': len(result.get('rtstruct_niftis', [])),
+                    'errors': result.get('errors', [])
+                })
+                
+            except DICOMSeries.DoesNotExist:
+                error_msg = f"Series {series_id} not found"
+                logger.error(error_msg)
                 results['failed_series'] += 1
-                results['errors'].extend(result.get('errors', []))
-            
-            results['series_results'].append({
-                'series_id': series_id,
-                'series_uid': series.series_instance_uid,
-                'success': result['success'],
-                'image_nifti': result.get('image_nifti'),
-                'rtstruct_count': len(result.get('rtstruct_niftis', [])),
-                'errors': result.get('errors', [])
-            })
-            
-        except DICOMSeries.DoesNotExist:
-            error_msg = f"Series {series_id} not found"
-            logger.error(error_msg)
-            results['failed_series'] += 1
-            results['errors'].append(error_msg)
-            results['series_results'].append({
-                'series_id': series_id,
-                'success': False,
-                'errors': [error_msg]
-            })
-        except Exception as e:
-            error_msg = f"Error processing series {series_id}: {str(e)}"
-            logger.error(error_msg)
-            results['failed_series'] += 1
-            results['errors'].append(error_msg)
-            results['series_results'].append({
-                'series_id': series_id,
-                'success': False,
-                'errors': [error_msg]
-            })
+                results['errors'].append(error_msg)
+                results['series_results'].append({
+                    'series_id': series_id,
+                    'success': False,
+                    'errors': [error_msg]
+                })
+            except Exception as e:
+                error_msg = f"Error processing series {series_id}: {str(e)}"
+                logger.error(error_msg)
+                results['failed_series'] += 1
+                results['errors'].append(error_msg)
+                results['series_results'].append({
+                    'series_id': series_id,
+                    'success': False,
+                    'errors': [error_msg]
+                })
+    
+    except SoftTimeLimitExceeded:
+        logger.warning("Soft time limit exceeded, spawning continuation task")
+        # Spawn continuation task for remaining series
+        current_idx = start_index + local_idx
+        remaining_ids = series_ids[current_idx:]
+        if remaining_ids:
+            logger.info(f"Spawning continuation task for {len(remaining_ids)} remaining series")
+            convert_series_to_nifti_chunked.apply_async(
+                args=[remaining_ids, 0, results],
+                countdown=5
+            )
+        return results
     
     # Final progress update
     progress_recorder.set_progress(100, 100, description="NIfTI conversion complete!")
@@ -97,6 +141,21 @@ def convert_series_to_nifti(self, series_ids):
         results['success'] = results['processed_series'] > 0
     
     return results
+
+
+@shared_task(bind=True)
+def convert_series_to_nifti(self, series_ids):
+    """
+    Wrapper task that calls the chunked version.
+    Maintains backward compatibility with existing code.
+    
+    Args:
+        series_ids: List of DICOMSeries IDs to convert
+        
+    Returns:
+        Dictionary with conversion results for all series
+    """
+    return convert_series_to_nifti_chunked(series_ids, start_index=0, accumulated_results=None)
 
 
 @shared_task(bind=True)
@@ -142,9 +201,186 @@ def compute_staple_task(self, image_series_id, structure_name, rtstruct_series_i
 
 
 @shared_task(bind=True)
+def compute_single_spatial_overlap(self, pair_data):
+    """
+    Celery task to compute spatial overlap metrics for a single ROI pair.
+    This task is designed to run in parallel with other instances.
+    
+    Args:
+        pair_data: Dict with keys:
+            - reference_roi_id: ID of reference ROI
+            - target_roi_id: ID of target ROI
+            - reference_roi_name: Name of reference ROI (for display)
+            - target_roi_name: Name of target ROI (for display)
+            - pair_index: Index of this pair (for logging)
+            - total_pairs: Total number of pairs (for logging)
+        
+    Returns:
+        Dictionary with computation result for this pair
+    """
+    reference_roi_id = int(pair_data['reference_roi_id'])
+    target_roi_id = int(pair_data['target_roi_id'])
+    reference_roi_name = pair_data.get('reference_roi_name', 'Unknown')
+    target_roi_name = pair_data.get('target_roi_name', 'Unknown')
+    pair_index = pair_data.get('pair_index', 0)
+    total_pairs = pair_data.get('total_pairs', 1)
+    
+    logger.info(f"Computing pair {pair_index}/{total_pairs}: ROI {reference_roi_id} vs {target_roi_id}")
+    
+    try:
+        # Compute metrics
+        metrics = compute_spatial_overlap_metrics(
+            reference_roi_id=reference_roi_id,
+            target_roi_id=target_roi_id,
+            save_to_db=True
+        )
+        
+        result = {
+            'reference_roi_id': reference_roi_id,
+            'reference_roi_name': reference_roi_name,
+            'target_roi_id': target_roi_id,
+            'target_roi_name': target_roi_name,
+            'metrics': metrics,
+            'success': metrics.get('error') is None,
+            'pair_index': pair_index
+        }
+        
+        if metrics.get('error'):
+            logger.error(f"Pair {pair_index}/{total_pairs} failed: {metrics['error']}")
+        else:
+            logger.info(f"Completed pair {pair_index}/{total_pairs}")
+        
+        return result
+        
+    except Exception as e:
+        error_msg = f"Error computing pair {pair_index}/{total_pairs}: {str(e)}"
+        logger.error(error_msg)
+        return {
+            'reference_roi_id': reference_roi_id,
+            'reference_roi_name': reference_roi_name,
+            'target_roi_id': target_roi_id,
+            'target_roi_name': target_roi_name,
+            'metrics': {
+                'error': str(e),
+                'DSC': None,
+                'HD95': None,
+                'APL': None,
+                'MSD': None,
+                'OMDC': None,
+                'UMDC': None
+            },
+            'success': False,
+            'pair_index': pair_index
+        }
+
+
+@shared_task
+def collect_spatial_overlap_results(results):
+    """
+    Callback task to collect and aggregate results from parallel spatial overlap computations.
+    Used as the callback in a chord.
+    
+    Args:
+        results: List of result dictionaries from individual pair computations
+        
+    Returns:
+        Dictionary with aggregated computation results
+    """
+    total_pairs = len(results)
+    completed = 0
+    failed = 0
+    errors = []
+    
+    for res in results:
+        if res['success']:
+            completed += 1
+        else:
+            failed += 1
+            errors.append(f"Pair {res['pair_index']}: {res['metrics'].get('error', 'Unknown error')}")
+    
+    # Sort results by pair_index to maintain order
+    results.sort(key=lambda x: x.get('pair_index', 0))
+    
+    logger.info(f"Parallel spatial overlap computation complete: {completed} successful, {failed} failed")
+    
+    return {
+        'success': True,
+        'total_pairs': total_pairs,
+        'completed': completed,
+        'failed': failed,
+        'pair_results': results,
+        'errors': errors
+    }
+
+
+@shared_task(bind=True)
+def compute_spatial_overlap_task_parallel(self, roi_pairs, batch_size=4):
+    """
+    Celery task to compute spatial overlap metrics for multiple ROI pairs in parallel.
+    Uses chord to execute pairs in parallel and collect results asynchronously.
+    
+    Args:
+        roi_pairs: List of dicts with keys:
+            - reference_roi_id: ID of reference ROI
+            - target_roi_id: ID of target ROI
+            - reference_roi_name: Name of reference ROI (for display)
+            - target_roi_name: Name of target ROI (for display)
+        batch_size: Number of pairs to process in parallel (default: 4)
+        
+    Returns:
+        Dictionary with computation results for all pairs
+    """
+    progress_recorder = ProgressRecorder(self)
+    total_pairs = len(roi_pairs)
+    
+    logger.info(f"Starting parallel spatial overlap computation for {total_pairs} ROI pairs (batch_size={batch_size})")
+    
+    # Prepare pair data with indices
+    pairs_with_indices = []
+    for idx, pair in enumerate(roi_pairs, 1):
+        pair_data = pair.copy()
+        pair_data['pair_index'] = idx
+        pair_data['total_pairs'] = total_pairs
+        pairs_with_indices.append(pair_data)
+    
+    # Update initial progress
+    progress_recorder.set_progress(
+        0,
+        100,
+        description=f"Starting parallel computation for {total_pairs} pairs..."
+    )
+    
+    # Create chord: group of parallel tasks with a callback to collect results
+    # This avoids calling .get() within a task
+    job = chord(
+        (compute_single_spatial_overlap.s(pair_data) for pair_data in pairs_with_indices),
+        collect_spatial_overlap_results.s()
+    )
+    
+    # Apply async and return the chord result
+    # The chord will execute all pairs in parallel (up to worker concurrency)
+    # and then call the callback to aggregate results
+    result = job.apply_async()
+    
+    # Since we can't wait for results in a task, we return a reference
+    # The frontend will poll for completion using the task_id
+    logger.info(f"Chord created for {total_pairs} pairs, task will complete asynchronously")
+    
+    # Return immediately - the chord will handle completion
+    return {
+        'success': True,
+        'total_pairs': total_pairs,
+        'message': f'Processing {total_pairs} pairs in parallel',
+        'chord_id': result.id
+    }
+
+
+@shared_task(bind=True)
 def compute_spatial_overlap_task(self, roi_pairs):
     """
     Celery task to compute spatial overlap metrics for multiple ROI pairs.
+    Uses sequential processing (kept for backward compatibility).
+    For better performance, use compute_spatial_overlap_task_parallel instead.
     
     Args:
         roi_pairs: List of dicts with keys:
