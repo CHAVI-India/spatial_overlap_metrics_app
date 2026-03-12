@@ -209,21 +209,26 @@
                     </ul>
                 </div>
                 
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                    <div>
-                        <button id="addAllSuggestedBtn" class="btn btn-success">
-                            <i class="bi bi-plus-circle-fill me-1"></i>Add All Suggested Pairs
-                        </button>
-                        <button id="clearSuggestedBtn" class="btn btn-outline-secondary ms-2">
-                            <i class="bi bi-x-circle me-1"></i>Clear Suggestions
-                        </button>
-                    </div>
-                    <div>
-                        <span class="text-muted small">Click individual pairs to add them</span>
+                <div class="mb-3">
+                    <div class="row align-items-center">
+                        <div class="col-md-6">
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-search"></i></span>
+                                <input type="text" id="suggestedPairsSearch" class="form-control" placeholder="Search by ROI name...">
+                            </div>
+                        </div>
+                        <div class="col-md-6 text-end mt-2 mt-md-0">
+                            <button id="addAllSuggestedBtn" class="btn btn-success">
+                                <i class="bi bi-plus-circle-fill me-1"></i>Add All Suggested
+                            </button>
+                            <button id="clearSuggestedBtn" class="btn btn-outline-secondary ms-2">
+                                <i class="bi bi-x-circle me-1"></i>Clear Suggestions
+                            </button>
+                        </div>
                     </div>
                 </div>
                 
-                <div id="suggestedPairsList" style="max-height: 400px; overflow-y: auto;">
+                <div id="suggestedPairsList" style="max-height: 500px; overflow-y: auto;">
                     <!-- Will be populated by JavaScript -->
                 </div>
             </div>
@@ -308,11 +313,16 @@ function setupEventListeners() {
     // Suggested pairs buttons
     const addAllBtn = document.getElementById('addAllSuggestedBtn');
     const clearSuggestedBtn = document.getElementById('clearSuggestedBtn');
+    const searchInput = document.getElementById('suggestedPairsSearch');
+    
     if (addAllBtn) {
         addAllBtn.addEventListener('click', addAllSuggestedPairs);
     }
     if (clearSuggestedBtn) {
         clearSuggestedBtn.addEventListener('click', clearSuggestedPairs);
+    }
+    if (searchInput) {
+        searchInput.addEventListener('input', filterSuggestedPairs);
     }
 }
 
@@ -325,32 +335,103 @@ function displaySuggestedPairs() {
     const stapleComparisons = suggestedPairs.filter(p => p.suggestion_type === 'staple_vs_regular');
     
     let html = '';
+    let globalIndex = 0;
     
     if (multipleStructureSets.length > 0) {
         html += `
-            <div class="mb-3">
+            <div class="mb-4">
                 <h6 class="text-success">
                     <i class="bi bi-diagram-3 me-2"></i>Multiple Structure Sets (${multipleStructureSets.length})
                 </h6>
                 <small class="text-muted">Same ROI in different structure sets for the same image series</small>
             </div>
         `;
-        multipleStructureSets.forEach((pair, index) => {
-            html += renderSuggestedPair(pair, index);
+        
+        // Group by ROI name (base name without STAPLE_ prefix)
+        const groupedByROI = {};
+        multipleStructureSets.forEach(pair => {
+            const roiName = pair.reference_roi_name.replace('STAPLE_', '');
+            if (!groupedByROI[roiName]) {
+                groupedByROI[roiName] = [];
+            }
+            groupedByROI[roiName].push(pair);
+        });
+        
+        // Sort ROI names alphabetically
+        const sortedROINames = Object.keys(groupedByROI).sort();
+        
+        sortedROINames.forEach(roiName => {
+            const pairs = groupedByROI[roiName];
+            const roiId = roiName.replace(/[^a-zA-Z0-9]/g, '_');
+            html += `
+                <div class="mb-3 ms-2 roi-group" data-roi-name="${roiName.toLowerCase()}">
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                        <div>
+                            <strong class="text-primary">${roiName}</strong>
+                            <span class="badge bg-secondary ms-2">${pairs.length} comparison${pairs.length > 1 ? 's' : ''}</span>
+                        </div>
+                        <button class="btn btn-sm btn-outline-success" onclick="addAllPairsForROI('${roiId}', 'multiple_structuresets')">
+                            <i class="bi bi-plus-circle-fill me-1"></i>Add All
+                        </button>
+                    </div>
+                    <div class="ms-3" id="roi_${roiId}_multiple">
+            `;
+            pairs.forEach(pair => {
+                html += renderSuggestedPair(pair, globalIndex++);
+            });
+            html += `
+                    </div>
+                </div>
+            `;
         });
     }
     
     if (stapleComparisons.length > 0) {
         html += `
-            <div class="mb-3 mt-4">
+            <div class="mb-4 mt-4">
                 <h6 class="text-warning">
                     <i class="bi bi-star-fill me-2"></i>STAPLE Comparisons (${stapleComparisons.length})
                 </h6>
                 <small class="text-muted">STAPLE consensus contours vs individual instances</small>
             </div>
         `;
-        stapleComparisons.forEach((pair, index) => {
-            html += renderSuggestedPair(pair, multipleStructureSets.length + index);
+        
+        // Group by ROI name
+        const groupedByROI = {};
+        stapleComparisons.forEach(pair => {
+            const roiName = pair.reference_roi_name.replace('STAPLE_', '');
+            if (!groupedByROI[roiName]) {
+                groupedByROI[roiName] = [];
+            }
+            groupedByROI[roiName].push(pair);
+        });
+        
+        // Sort ROI names alphabetically
+        const sortedROINames = Object.keys(groupedByROI).sort();
+        
+        sortedROINames.forEach(roiName => {
+            const pairs = groupedByROI[roiName];
+            const roiId = roiName.replace(/[^a-zA-Z0-9]/g, '_');
+            html += `
+                <div class="mb-3 ms-2 roi-group" data-roi-name="${roiName.toLowerCase()}">
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                        <div>
+                            <strong class="text-warning">${roiName}</strong>
+                            <span class="badge bg-secondary ms-2">${pairs.length} comparison${pairs.length > 1 ? 's' : ''}</span>
+                        </div>
+                        <button class="btn btn-sm btn-outline-warning" onclick="addAllPairsForROI('${roiId}', 'staple_vs_regular')">
+                            <i class="bi bi-plus-circle-fill me-1"></i>Add All
+                        </button>
+                    </div>
+                    <div class="ms-3" id="roi_${roiId}_staple">
+            `;
+            pairs.forEach(pair => {
+                html += renderSuggestedPair(pair, globalIndex++);
+            });
+            html += `
+                    </div>
+                </div>
+            `;
         });
     }
     
@@ -433,6 +514,52 @@ function clearSuggestedPairs() {
         );
     });
     displayPairsList();
+}
+
+function addAllPairsForROI(roiId, suggestionType) {
+    // Find all pairs for this ROI and suggestion type
+    const roiName = roiId.replace(/_/g, ' ');
+    
+    const pairsToAdd = suggestedPairs.filter(pair => {
+        const pairRoiName = pair.reference_roi_name.replace('STAPLE_', '').replace(/[^a-zA-Z0-9]/g, '_');
+        return pairRoiName === roiId && pair.suggestion_type === suggestionType;
+    });
+    
+    pairsToAdd.forEach(pair => {
+        const exists = roiPairs.some(p => 
+            p.reference_roi_id == pair.reference_roi_id && 
+            p.target_roi_id == pair.target_roi_id
+        );
+        
+        if (!exists) {
+            roiPairs.push(pair);
+        }
+    });
+    
+    displayPairsList();
+}
+
+function filterSuggestedPairs(e) {
+    const searchTerm = e.target.value.toLowerCase().trim();
+    const roiGroups = document.querySelectorAll('.roi-group');
+    
+    if (!searchTerm) {
+        // Show all groups
+        roiGroups.forEach(group => {
+            group.style.display = '';
+        });
+        return;
+    }
+    
+    // Filter groups by ROI name
+    roiGroups.forEach(group => {
+        const roiName = group.getAttribute('data-roi-name');
+        if (roiName && roiName.includes(searchTerm)) {
+            group.style.display = '';
+        } else {
+            group.style.display = 'none';
+        }
+    });
 }
 
 function handleFirstROIChange(e) {
