@@ -1,17 +1,18 @@
 {% extends 'app/base.html' %}
+{% load static %}
 
-{% block title %}Home - DICOM Spatial Metrics{% endblock %}
+{% block title %}Home - COMET - Contour Metrics{% endblock %}
 
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-lg-8 text-center py-5">
         <h1 class="display-4 mb-4">
-            <i class="bi bi-heart-pulse text-primary"></i>
-            DICOM Spatial Metrics
+            <img src="{% static 'logo.png' %}" alt="COMET Logo" height="80" class="mb-3">
+            <div>COMET - Contour Metrics</div>
         </h1>
         <p class="lead mb-5">
             A web application for processing and analyzing DICOM medical imaging data.
-            Upload DICOM archives, extract metadata, and calculate spatial overlap metrics.
+            Upload DICOM archives, extract metadata, and calculate spatial overlap metrics for contour comparison.
         </p>
         <div class="row g-4">
             <div class="col-md-4">
