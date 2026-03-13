@@ -19,6 +19,7 @@ Django==6.0.3
 django_celery_results==2.6.0
 dotenv==0.9.9
 fonttools==4.61.1
+gunicorn==25.1.0
 idna==3.11
 ImageIO==2.37.2
 joblib==1.5.3
@@ -60,3 +61,4 @@ tzlocal==5.3.1
 urllib3==2.6.3
 vine==5.1.0
 wcwidth==0.6.0
+whitenoise==6.12.0
