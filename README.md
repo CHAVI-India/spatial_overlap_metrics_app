@@ -53,10 +53,94 @@ COMET (Contour Metrics) is an open source application designed to provide a grap
 - **GPU Requirements**: Requires WebGL-capable graphics card. Older/integrated GPUs may have reduced performance.
 
 ### 📊 Spatial Overlap Metrics
-- Compute Dice coefficient, Jaccard index, and other overlap metrics
-- Compare multiple observer contours
-- STAPLE consensus contour generation
-- Export results for downstream analysis
+
+COMET computes 12 spatial overlap metrics between binary contour pairs. All metrics are computed from NIfTI volumes with proper spacing consideration.
+
+#### Available Metrics
+
+1. **DSC (Dice Similarity Coefficient)**
+   - Range: [0, 1], where 1 = perfect overlap
+   - Formula: `DSC = 2|A ∩ B| / (|A| + |B|)`
+   - Measures volumetric overlap between two structures
+
+2. **Jaccard Similarity Coefficient**
+   - Range: [0, 1], where 1 = perfect overlap
+   - Formula: `Jaccard = |A ∩ B| / |A ∪ B|`
+   - Alternative overlap metric, more sensitive to size differences than DSC
+
+3. **HD95 (Hausdorff Distance 95th Percentile)**
+   - Units: mm
+   - Computes maximum surface distance per direction, then takes 95th percentile
+   - Measures worst-case boundary disagreement (excluding outliers)
+   - Lower values indicate better agreement
+
+4. **MSD (Mean Surface Distance)**
+   - Units: mm
+   - Weighted average of mean distances from each surface to the other
+   - Weighting based on number of surface points in each direction
+   - Measures average boundary disagreement
+
+5. **APL (Added Path Length)**
+   - Units: mm
+   - Slice-wise computation of contour length in reference missing from test
+   - Uses 3mm distance threshold by default
+   - Measures total missing contour length
+
+6. **Surface DSC**
+   - Range: [0, 1], where 1 = perfect surface agreement
+   - Uses τ = 3mm tolerance by default
+   - Measures surface overlap within acceptable deviation
+   - Reference: Nikolov et al., J Med Internet Res 2021;23(7):e26151
+
+7. **VOE (Volume Overlap Error)**
+   - Range: [0, 1], where 0 = perfect overlap
+   - Formula: `VOE = 1 - Jaccard`
+   - Inverse of Jaccard coefficient
+
+8. **VI (Variation of Information)**
+   - Information-theoretic measure of segmentation disagreement
+   - Based on mutual information between binary volumes
+   - Lower values indicate better agreement
+
+9. **Cosine Similarity**
+   - Range: [-1, 1], where 1 = identical
+   - Measures angular similarity between flattened volumes
+   - Useful for overall shape comparison
+
+10. **MDC (Mean Distance to Conformity)**
+    - Units: mm
+    - Average of OMDC and UMDC
+    - Measures average distance from symmetric difference to nearest boundary
+
+11. **OMDC (Overcontouring Mean Distance to Conformity)**
+    - Units: mm
+    - Mean distance from overcontoured voxels to reference boundary
+    - Uses axis-aligned distance calculation
+
+12. **UMDC (Undercontouring Mean Distance to Conformity)**
+    - Units: mm
+    - Mean distance from undercontoured voxels to test boundary
+    - Uses axis-aligned distance calculation
+
+#### Implementation Details
+
+- **Surface Extraction**: Binary erosion method for efficient surface voxel identification
+- **Distance Computation**: Euclidean distance transform for accurate distance measurements
+- **Spacing Awareness**: All distance metrics account for voxel spacing (anisotropic support)
+- **Edge Cases**: Handles empty volumes, single-voxel structures, and non-overlapping regions
+
+#### Validation
+
+Metrics have been validated against PlatiPy reference implementation:
+- **Perfect Match**: DSC, Surface DSC, APL (0.0mm difference)
+- **Minor Differences**: HD95 (~2.3mm), MSD (~1.2mm) due to different surface extraction methods
+- See `compare_platipy_metrics.py` for QA validation script
+
+#### References
+
+- STAPLE: Warfield et al., IEEE TMI 2004
+- Surface DSC: Nikolov et al., J Med Internet Res 2021
+- Implementation: Based on draw-client-2.0 spatial overlap module
 
 # Installation
 

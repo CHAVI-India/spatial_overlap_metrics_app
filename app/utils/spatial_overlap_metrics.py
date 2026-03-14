@@ -238,7 +238,7 @@ def mean_distance_to_conformity(volume1, volume2, spacing=(1.0, 1.0, 1.0)):
 def hausdorff_distance_95(volume1, volume2):
     """
     Calculate Hausdorff Distance 95th percentile between two binary volumes.
-    Uses distance transform for efficient computation.
+    Follows PlatiPy's approach: compute max distance per direction, then take 95th percentile.
 
     Args:
         volume1 (numpy.ndarray): First binary volume.
@@ -273,16 +273,20 @@ def hausdorff_distance_95(volume1, volume2):
     surface_distances_1_to_2 = dist2[vol1_surface]
     surface_distances_2_to_1 = dist1[vol2_surface]
     
-    hd_95_1_to_2 = np.percentile(surface_distances_1_to_2, 95)
-    hd_95_2_to_1 = np.percentile(surface_distances_2_to_1, 95)
+    # Compute max distance per direction (as per mathematical definition of HD)
+    max_dist_1_to_2 = np.max(surface_distances_1_to_2)
+    max_dist_2_to_1 = np.max(surface_distances_2_to_1)
     
-    return max(hd_95_1_to_2, hd_95_2_to_1)
+    # HD95 is the 95th percentile of the two max distances
+    hd_95 = np.percentile([max_dist_1_to_2, max_dist_2_to_1], 95)
+    
+    return hd_95
 
 
 def mean_surface_distance(volume1, volume2):
     """
     Calculate Mean Surface Distance between two binary volumes.
-    Uses distance transform for efficient computation.
+    Uses weighted average based on number of surface points (following PlatiPy's approach).
 
     Args:
         volume1 (numpy.ndarray): First binary volume.
@@ -317,10 +321,18 @@ def mean_surface_distance(volume1, volume2):
     surface_distances_1_to_2 = dist2[vol1_surface]
     surface_distances_2_to_1 = dist1[vol2_surface]
     
-    msd1 = np.mean(surface_distances_1_to_2)
-    msd2 = np.mean(surface_distances_2_to_1)
+    # Compute mean distances per direction
+    mean_dist_1_to_2 = np.mean(surface_distances_1_to_2)
+    mean_dist_2_to_1 = np.mean(surface_distances_2_to_1)
     
-    return (msd1 + msd2) / 2
+    # Number of surface points in each direction
+    num_points_1 = len(surface_distances_1_to_2)
+    num_points_2 = len(surface_distances_2_to_1)
+    
+    # Weighted average based on number of surface points
+    mean_surf_dist = (mean_dist_1_to_2 * num_points_1 + mean_dist_2_to_1 * num_points_2) / (num_points_1 + num_points_2)
+    
+    return mean_surf_dist
 
 
 def added_path_length(volume1, volume2, distance_threshold_mm=3, spacing=(1.0, 1.0, 1.0)):

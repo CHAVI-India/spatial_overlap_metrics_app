@@ -96,3 +96,5 @@ media/dicom_zip_files/
 media/nifti_files/
 media/visualizations/
 logs/
+platipy_test_data/
+platipy_custom_metrics_comparison.csv

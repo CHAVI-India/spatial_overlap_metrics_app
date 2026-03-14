@@ -1054,6 +1054,259 @@ class TestCase14_SeparatedSpheres(unittest.TestCase):
                           msg=f"MSD should be > 10.0 for separated spheres, got {result}")
 
 
+class TestCase15_EspadonSpheres(unittest.TestCase):
+    """
+    Test Case 15: Espadon cross-verification test case
+    
+    This test case replicates the espadon R package test setup:
+    - Sphere 1: radius = 10 units, center at (25, 25, 25)
+    - Sphere 2: radius = 11 units, center at (28, 25, 25) - offset by dR=3 in x
+    
+    The espadon test uses:
+    ```R
+    R1 <- 10
+    R2 <- 11
+    dR <- 3
+    sp.similarity.from.mesh(mesh1, mesh2,
+                           hausdorff.quantile = seq(0, 1, 0.05),
+                           surface.tol = seq(0, dR + abs(R2-R1), 0.5))
+    ```
+    
+    Geometric analysis:
+    - Distance between centers: 3 units
+    - Sum of radii: 10 + 11 = 21 units
+    - Since center distance (3) < sum of radii (21), spheres overlap
+    - Overlap region can be calculated using sphere intersection formulas
+    
+    This test allows cross-verification with espadon's results for:
+    - DSC (Dice Similarity Coefficient)
+    - Jaccard Index
+    - Hausdorff Distance (95th percentile)
+    - Mean Surface Distance
+    - Surface DSC with various tolerance values
+    
+    Note: Use this test to compare results with espadon's sp.similarity.from.mesh output
+    """
+    
+    def setUp(self):
+        # Use a larger volume to accommodate both spheres
+        # Volume size: 60x60x60 to have enough space
+        size = 60
+        
+        # Sphere 1: radius = 10, centered at (25, 25, 25)
+        R1 = 10
+        center1 = (25, 25, 25)
+        
+        x1, y1, z1 = np.ogrid[:size, :size, :size]
+        distance1 = np.sqrt((x1 - center1[0])**2 + (y1 - center1[1])**2 + (z1 - center1[2])**2)
+        self.sphere1 = np.zeros((size, size, size), dtype=np.uint8)
+        self.sphere1[distance1 <= R1] = 255
+        
+        # Sphere 2: radius = 11, centered at (28, 25, 25) - offset by dR=3 in x
+        R2 = 11
+        dR = 3
+        center2 = (25 + dR, 25, 25)  # (28, 25, 25)
+        
+        x2, y2, z2 = np.ogrid[:size, :size, :size]
+        distance2 = np.sqrt((x2 - center2[0])**2 + (y2 - center2[1])**2 + (z2 - center2[2])**2)
+        self.sphere2 = np.zeros((size, size, size), dtype=np.uint8)
+        self.sphere2[distance2 <= R2] = 255
+        
+        self.spacing = (1.0, 1.0, 1.0)
+        
+        # Calculate actual volumes and overlap
+        self.vol1_size = np.sum(self.sphere1 > 0)
+        self.vol2_size = np.sum(self.sphere2 > 0)
+        self.intersection = np.sum((self.sphere1 > 0) & (self.sphere2 > 0))
+        self.union = self.vol1_size + self.vol2_size - self.intersection
+        
+        # Store parameters for reference
+        self.R1 = R1
+        self.R2 = R2
+        self.dR = dR
+        self.center1 = center1
+        self.center2 = center2
+        
+        # Expected values (calculated from actual voxel data)
+        self.expected = {
+            'DSC': (2.0 * self.intersection) / (self.vol1_size + self.vol2_size),
+            'Jaccard': self.intersection / self.union if self.union > 0 else 0.0,
+            'VOE': 1.0 - (self.intersection / self.union) if self.union > 0 else 0.0,
+        }
+    
+    def test_sphere_volumes(self):
+        """Verify sphere volumes are approximately correct"""
+        # Theoretical volumes: V = (4/3) * π * r³
+        theoretical_vol1 = (4.0/3.0) * np.pi * (self.R1 ** 3)
+        theoretical_vol2 = (4.0/3.0) * np.pi * (self.R2 ** 3)
+        
+        print(f"\nSphere Volume Verification:")
+        print(f"  Sphere 1 (R={self.R1}): {self.vol1_size} voxels (theoretical: {theoretical_vol1:.1f})")
+        print(f"  Sphere 2 (R={self.R2}): {self.vol2_size} voxels (theoretical: {theoretical_vol2:.1f})")
+        
+        # Allow some tolerance due to discretization
+        tolerance = 0.15  # 15% tolerance for voxelization
+        self.assertAlmostEqual(self.vol1_size, theoretical_vol1, delta=theoretical_vol1 * tolerance,
+                              msg=f"Sphere 1 volume: expected ~{theoretical_vol1:.1f}, got {self.vol1_size}")
+        self.assertAlmostEqual(self.vol2_size, theoretical_vol2, delta=theoretical_vol2 * tolerance,
+                              msg=f"Sphere 2 volume: expected ~{theoretical_vol2:.1f}, got {self.vol2_size}")
+    
+    def test_spheres_overlap(self):
+        """Verify that spheres do overlap (sanity check)"""
+        self.assertGreater(self.intersection, 0,
+                          msg=f"Spheres should overlap: R1={self.R1}, R2={self.R2}, dR={self.dR}")
+        # Center distance < sum of radii means overlap
+        center_distance = self.dR
+        sum_of_radii = self.R1 + self.R2
+        self.assertLess(center_distance, sum_of_radii,
+                       msg=f"Center distance ({center_distance}) should be < sum of radii ({sum_of_radii})")
+    
+    def test_dsc_espadon(self):
+        """Calculate DSC for espadon cross-verification"""
+        result = dice_similarity(self.sphere1, self.sphere2)
+        # Print for cross-verification with espadon (before assertion)
+        print(f"\nEspadon Test - DSC: {result:.6f}")
+        print(f"  Expected: {self.expected['DSC']:.6f}")
+        print(f"  Sphere 1 volume: {self.vol1_size} voxels (R={self.R1})")
+        print(f"  Sphere 2 volume: {self.vol2_size} voxels (R={self.R2})")
+        print(f"  Intersection: {self.intersection} voxels")
+        print(f"  Separation: dR={self.dR}")
+        self.assertAlmostEqual(result, self.expected['DSC'], places=6,
+                              msg=f"DSC: expected {self.expected['DSC']:.6f}, got {result:.6f}")
+    
+    def test_jaccard_espadon(self):
+        """Calculate Jaccard for espadon cross-verification"""
+        result = jaccard_similarity(self.sphere1, self.sphere2)
+        print(f"\nEspadon Test - Jaccard: {result:.6f}")
+        print(f"  Expected: {self.expected['Jaccard']:.6f}")
+        self.assertAlmostEqual(result, self.expected['Jaccard'], places=6,
+                              msg=f"Jaccard: expected {self.expected['Jaccard']:.6f}, got {result:.6f}")
+    
+    def test_voe_espadon(self):
+        """Calculate VOE for espadon cross-verification"""
+        result = volume_overlap_error(self.sphere1, self.sphere2)
+        print(f"\nEspadon Test - VOE: {result:.6f}")
+        print(f"  Expected: {self.expected['VOE']:.6f}")
+        self.assertAlmostEqual(result, self.expected['VOE'], places=6,
+                              msg=f"VOE: expected {self.expected['VOE']:.6f}, got {result:.6f}")
+    
+    def test_hausdorff_espadon(self):
+        """Calculate HD95 for espadon cross-verification"""
+        result = hausdorff_distance_95(self.sphere1, self.sphere2)
+        print(f"\nEspadon Test - HD95: {result:.6f}")
+        # HD95 should be positive but reasonable for overlapping spheres
+        self.assertGreater(result, 0.0,
+                          msg=f"HD95 should be > 0 for offset spheres, got {result:.6f}")
+        # Maximum possible distance should be less than diameter of larger sphere + separation
+        max_expected = 2 * self.R2 + self.dR
+        self.assertLess(result, max_expected,
+                       msg=f"HD95 should be < {max_expected}, got {result}")
+    
+    def test_msd_espadon(self):
+        """Calculate MSD for espadon cross-verification"""
+        result = mean_surface_distance(self.sphere1, self.sphere2)
+        print(f"\nEspadon Test - MSD: {result:.6f}")
+        self.assertGreater(result, 0.0,
+                          msg=f"MSD should be > 0 for offset spheres, got {result:.6f}")
+    
+    def test_apl_espadon(self):
+        """Calculate Added Path Length for espadon cross-verification"""
+        result = added_path_length(self.sphere1, self.sphere2, spacing=self.spacing)
+        print(f"\nEspadon Test - APL (Added Path Length): {result:.6f}")
+        self.assertGreater(result, 0.0,
+                          msg=f"APL should be > 0 for offset spheres, got {result:.6f}")
+    
+    def test_surface_dsc_espadon_multiple_tolerances(self):
+        """Calculate Surface DSC with multiple tolerance values for espadon cross-verification
+        
+        Espadon uses: surface.tol = seq(0, dR + abs(R2-R1), 0.5)
+        Which is: seq(0, 3 + abs(11-10), 0.5) = seq(0, 4, 0.5)
+        Tolerance values: 0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0
+        """
+        # Generate tolerance values as in espadon
+        max_tol = self.dR + abs(self.R2 - self.R1)  # 3 + 1 = 4
+        tolerances = np.arange(0.0, max_tol + 0.5, 0.5)
+        
+        print(f"\nEspadon Test - Surface DSC with varying tolerance:")
+        print(f"  Tolerance range: 0 to {max_tol} (step 0.5)")
+        
+        surface_dsc_results = []
+        for tau in tolerances:
+            if tau == 0.0:
+                # Skip tau=0 as it may cause issues
+                continue
+            result = surface_dsc(self.sphere1, self.sphere2, tau=tau, spacing=self.spacing)
+            surface_dsc_results.append((tau, result))
+            print(f"  tau={tau:.1f}: Surface DSC = {result:.6f}")
+            
+            # Surface DSC should be in [0, 1]
+            self.assertGreaterEqual(result, 0.0,
+                                   msg=f"Surface DSC should be >= 0, got {result} for tau={tau}")
+            self.assertLessEqual(result, 1.0,
+                                msg=f"Surface DSC should be <= 1, got {result} for tau={tau}")
+        
+        # Verify that Surface DSC increases with tolerance
+        for i in range(len(surface_dsc_results) - 1):
+            tau1, sdsc1 = surface_dsc_results[i]
+            tau2, sdsc2 = surface_dsc_results[i + 1]
+            self.assertLessEqual(sdsc1, sdsc2 + 0.01,  # Allow small numerical tolerance
+                                msg=f"Surface DSC should increase with tolerance: "
+                                    f"tau={tau1:.1f} gave {sdsc1:.6f}, tau={tau2:.1f} gave {sdsc2:.6f}")
+    
+    def test_cosine_similarity_espadon(self):
+        """Calculate Cosine similarity for espadon cross-verification"""
+        result = cosine_similarity(self.sphere1, self.sphere2)
+        print(f"\nEspadon Test - Cosine Similarity: {result:.6f}")
+        # Should be between 0 and 1 for overlapping volumes
+        self.assertGreater(result, 0.0,
+                          msg=f"Cosine should be > 0 for overlapping spheres, got {result:.6f}")
+        self.assertLessEqual(result, 1.0,
+                            msg=f"Cosine should be <= 1, got {result:.6f}")
+    
+    def test_print_summary_for_espadon_comparison(self):
+        """Print comprehensive summary for easy comparison with espadon results"""
+        print("\n" + "="*70)
+        print("ESPADON CROSS-VERIFICATION TEST SUMMARY")
+        print("="*70)
+        print(f"\nTest Configuration:")
+        print(f"  Sphere 1: radius = {self.R1} units, center = {self.center1}")
+        print(f"  Sphere 2: radius = {self.R2} units, center = {self.center2}")
+        print(f"  Separation: dR = {self.dR} units")
+        print(f"  Voxel spacing: {self.spacing}")
+        
+        print(f"\nVolume Information:")
+        print(f"  Sphere 1 volume: {self.vol1_size} voxels")
+        print(f"  Sphere 2 volume: {self.vol2_size} voxels")
+        print(f"  Intersection: {self.intersection} voxels")
+        print(f"  Union: {self.union} voxels")
+        
+        print(f"\nMetric Results:")
+        dsc = dice_similarity(self.sphere1, self.sphere2)
+        jaccard = jaccard_similarity(self.sphere1, self.sphere2)
+        voe = volume_overlap_error(self.sphere1, self.sphere2)
+        hd95 = hausdorff_distance_95(self.sphere1, self.sphere2)
+        msd = mean_surface_distance(self.sphere1, self.sphere2)
+        apl = added_path_length(self.sphere1, self.sphere2, spacing=self.spacing)
+        cosine = cosine_similarity(self.sphere1, self.sphere2)
+        
+        print(f"  DSC (Dice):              {dsc:.6f}")
+        print(f"  Jaccard Index:           {jaccard:.6f}")
+        print(f"  VOE:                     {voe:.6f}")
+        print(f"  HD95:                    {hd95:.6f}")
+        print(f"  MSD:                     {msd:.6f}")
+        print(f"  APL:                     {apl:.6f}")
+        print(f"  Cosine Similarity:       {cosine:.6f}")
+        
+        print(f"\nSurface DSC (at key tolerance values):")
+        for tau in [0.5, 1.0, 2.0, 3.0, 4.0]:
+            sdsc = surface_dsc(self.sphere1, self.sphere2, tau=tau, spacing=self.spacing)
+            print(f"  tau = {tau:.1f}:  {sdsc:.6f}")
+        
+        print("\n" + "="*70)
+        print("Compare these results with espadon's sp.similarity.from.mesh output")
+        print("="*70 + "\n")
+
+
 if __name__ == '__main__':
     # Run tests with verbose output
     unittest.main(verbosity=2)

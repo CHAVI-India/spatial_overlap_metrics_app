@@ -42,6 +42,7 @@ from app.tests.test_metrics_mathematical_correctness import (
     TestCase12_ConcentricSpheres,
     TestCase13_OffsetSpheres,
     TestCase14_SeparatedSpheres,
+    TestCase15_EspadonSpheres,
 )
 
 
@@ -68,6 +69,7 @@ def run_tests():
         TestCase12_ConcentricSpheres,
         TestCase13_OffsetSpheres,
         TestCase14_SeparatedSpheres,
+        TestCase15_EspadonSpheres,
     ]
     
     for test_case in test_cases:
