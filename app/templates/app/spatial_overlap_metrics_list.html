@@ -71,6 +71,8 @@
                             <th>Patient ID</th>
                             <th>Reference ROI</th>
                             <th>Target ROI</th>
+                            <th class="text-center">Vol Ref (cm³)</th>
+                            <th class="text-center">Vol Target (cm³)</th>
                             <th class="text-center">DSC</th>
                             <th class="text-center">Jaccard</th>
                             <th class="text-center">HD95 (mm)</th>
@@ -133,6 +135,20 @@
                                 <small class="text-muted d-block">
                                     <i class="bi bi-cpu me-1"></i>{{ result.target_roi_generation_algorithm }}
                                 </small>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                {% if result.metrics.Volume_Ref != None %}
+                                    {{ result.metrics.Volume_Ref|floatformat:2 }}
+                                {% else %}
+                                    <span class="text-muted">N/A</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                {% if result.metrics.Volume_Target != None %}
+                                    {{ result.metrics.Volume_Target|floatformat:2 }}
+                                {% else %}
+                                    <span class="text-muted">N/A</span>
                                 {% endif %}
                             </td>
                             <td class="text-center">
@@ -244,6 +260,12 @@
         <div class="card-body">
             <div class="row">
                 <div class="col-md-3">
+                    <strong>Vol Ref:</strong> Reference ROI Volume (cm³)
+                </div>
+                <div class="col-md-3">
+                    <strong>Vol Target:</strong> Target ROI Volume (cm³)
+                </div>
+                <div class="col-md-3 mt-2">
                     <strong>DSC:</strong> Dice Similarity Coefficient (0-1, higher better)
                 </div>
                 <div class="col-md-3">

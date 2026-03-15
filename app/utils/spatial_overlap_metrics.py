@@ -132,6 +132,32 @@ def cosine_similarity(volume1, volume2):
     return sklearn_cosine_similarity(volume1_flat, volume2_flat)[0][0]
 
 
+def compute_volume(volume, spacing=(1.0, 1.0, 1.0)):
+    """
+    Calculate the volume of a binary mask in cubic centimeters (cm³).
+
+    Args:
+        volume (numpy.ndarray): Binary volume.
+        spacing (tuple): Voxel spacing in (x, y, z) dimensions in mm.
+
+    Returns:
+        float: Volume in cubic centimeters (cm³).
+    """
+    # Count non-zero voxels
+    num_voxels = np.sum(volume > 0)
+    
+    # Calculate voxel volume in mm³
+    voxel_volume_mm3 = np.prod(spacing)
+    
+    # Total volume in mm³
+    total_volume_mm3 = num_voxels * voxel_volume_mm3
+    
+    # Convert to cm³ (1 cm³ = 1000 mm³)
+    volume_cm3 = total_volume_mm3 / 1000.0
+    
+    return volume_cm3
+
+
 def surface_dsc(volume1, volume2, tau=3.0, spacing=(1.0, 1.0, 1.0)):
     """
     Calculate Surface Dice Similarity Coefficient between two binary volumes.
@@ -658,6 +684,8 @@ def compute_spatial_overlap_metrics(
         'VI': None,
         'Cosine': None,
         'SurfaceDSC': None,
+        'Volume_Ref': None,
+        'Volume_Target': None,
         'error': None
     }
     
@@ -691,6 +719,11 @@ def compute_spatial_overlap_metrics(
         logger.info(f"  Reference NIfTI path: {ref_nifti_path}")
         logger.info(f"  Target NIfTI path: {target_nifti_path}")
         
+        # Compute volumes for each ROI
+        results['Volume_Ref'] = compute_volume(ref_volume, spacing=spacing)
+        results['Volume_Target'] = compute_volume(target_volume, spacing=spacing)
+        
+        # Compute overlap metrics
         results['DSC'] = dice_similarity(ref_volume, target_volume)
         results['Jaccard'] = jaccard_similarity(ref_volume, target_volume)
         results['HD95'] = hausdorff_distance_95(ref_volume, target_volume, spacing=spacing)
@@ -719,7 +752,7 @@ def compute_spatial_overlap_metrics(
                             )
         
         # Convert numpy types to JSON-serializable Python types for return
-        for key in ['DSC', 'Jaccard', 'HD95', 'APL', 'MSD', 'OMDC', 'UMDC', 'MDC', 'VOE', 'VI', 'Cosine', 'SurfaceDSC']:
+        for key in ['DSC', 'Jaccard', 'HD95', 'APL', 'MSD', 'OMDC', 'UMDC', 'MDC', 'VOE', 'VI', 'Cosine', 'SurfaceDSC', 'Volume_Ref', 'Volume_Target']:
             if results[key] is not None:
                 val = float(results[key])
                 # Convert inf/nan to None for proper JSON serialization

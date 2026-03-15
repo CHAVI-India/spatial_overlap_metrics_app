@@ -75,6 +75,40 @@
                     </div>
                     {% else %}
                     <div class="row">
+                        <!-- Volume Reference -->
+                        <div class="col-md-3 col-sm-6 mb-3">
+                            <div class="card bg-info text-white">
+                                <div class="card-body text-center">
+                                    <h6 class="mb-1">Vol Ref</h6>
+                                    <h4 class="mb-0">
+                                        {% if result.metrics.Volume_Ref != None %}
+                                            {{ result.metrics.Volume_Ref|floatformat:2 }}
+                                        {% else %}
+                                            N/A
+                                        {% endif %}
+                                    </h4>
+                                    <small>Reference Volume (cm³)</small>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Volume Target -->
+                        <div class="col-md-3 col-sm-6 mb-3">
+                            <div class="card bg-success text-white">
+                                <div class="card-body text-center">
+                                    <h6 class="mb-1">Vol Target</h6>
+                                    <h4 class="mb-0">
+                                        {% if result.metrics.Volume_Target != None %}
+                                            {{ result.metrics.Volume_Target|floatformat:2 }}
+                                        {% else %}
+                                            N/A
+                                        {% endif %}
+                                    </h4>
+                                    <small>Target Volume (cm³)</small>
+                                </div>
+                            </div>
+                        </div>
+                        
                         <!-- DSC -->
                         <div class="col-md-3 col-sm-6 mb-3">
                             <div class="card bg-light">

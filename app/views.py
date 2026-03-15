@@ -1587,15 +1587,20 @@ def spatial_overlap_metrics_list(request):
             grouped_results[key]['reference_roi_generation_algorithm'] = ref_roi.roi_generation_algorithm
             grouped_results[key]['target_roi_description'] = target_roi.roi_description
             grouped_results[key]['target_roi_generation_algorithm'] = target_roi.roi_generation_algorithm
-            grouped_results[key]['reference_type'] = 'STAPLE' if ref_roi.staple_roi else 'RTStruct'
-            grouped_results[key]['target_type'] = 'STAPLE' if target_roi.staple_roi else 'RTStruct'
+            # STAPLE ROIs have instance=NULL, regular ROIs have instance set
+            grouped_results[key]['reference_type'] = 'STAPLE' if ref_roi.instance is None else 'RTStruct'
+            grouped_results[key]['target_type'] = 'STAPLE' if target_roi.instance is None else 'RTStruct'
             grouped_results[key]['created_at'] = pair.created_at
             
-            # Get patient ID
+            # Get patient ID (handle both regular ROIs and STAPLE ROIs)
             if ref_roi.instance:
                 grouped_results[key]['patient_id'] = ref_roi.instance.series.study.patient.patient_id
+            elif ref_roi.staple_roi and ref_roi.staple_roi.instance:
+                grouped_results[key]['patient_id'] = ref_roi.staple_roi.instance.series.study.patient.patient_id
             elif target_roi.instance:
                 grouped_results[key]['patient_id'] = target_roi.instance.series.study.patient.patient_id
+            elif target_roi.staple_roi and target_roi.staple_roi.instance:
+                grouped_results[key]['patient_id'] = target_roi.staple_roi.instance.series.study.patient.patient_id
         
         # Add metric to this pair
         if pair.metric_calculated:
@@ -1701,14 +1706,20 @@ def spatial_overlap_metrics_csv(request):
             grouped_results[key]['reference_roi_generation_algorithm'] = ref_roi.roi_generation_algorithm
             grouped_results[key]['target_roi_description'] = target_roi.roi_description
             grouped_results[key]['target_roi_generation_algorithm'] = target_roi.roi_generation_algorithm
-            grouped_results[key]['reference_type'] = 'STAPLE' if ref_roi.staple_roi else 'RTStruct'
-            grouped_results[key]['target_type'] = 'STAPLE' if target_roi.staple_roi else 'RTStruct'
+            # STAPLE ROIs have instance=NULL, regular ROIs have instance set
+            grouped_results[key]['reference_type'] = 'STAPLE' if ref_roi.instance is None else 'RTStruct'
+            grouped_results[key]['target_type'] = 'STAPLE' if target_roi.instance is None else 'RTStruct'
             grouped_results[key]['created_at'] = pair.created_at
             
+            # Get patient ID (handle both regular ROIs and STAPLE ROIs)
             if ref_roi.instance:
                 grouped_results[key]['patient_id'] = ref_roi.instance.series.study.patient.patient_id
+            elif ref_roi.staple_roi and ref_roi.staple_roi.instance:
+                grouped_results[key]['patient_id'] = ref_roi.staple_roi.instance.series.study.patient.patient_id
             elif target_roi.instance:
                 grouped_results[key]['patient_id'] = target_roi.instance.series.study.patient.patient_id
+            elif target_roi.staple_roi and target_roi.staple_roi.instance:
+                grouped_results[key]['patient_id'] = target_roi.staple_roi.instance.series.study.patient.patient_id
         
         if pair.metric_calculated:
             grouped_results[key]['metrics'][pair.metric_calculated] = pair.metric_value
